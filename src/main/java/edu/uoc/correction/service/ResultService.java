@@ -17,7 +17,11 @@ import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Unmarshaller;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * @author Fran Manez
@@ -27,6 +31,7 @@ public class ResultService {
 
     private static final String DIRECTORY_TEST_RESULTS_XML = "/build/test-results/test/";
     Configuration configuration;
+    private final Map<String, Double> studentScores = new HashMap<>();
 
     public ResultService(Configuration configuration){
         this.configuration = configuration;
@@ -39,7 +44,8 @@ public class ResultService {
         List<Student> students = new ArrayList<>();
 
         File folder = new File(configuration.getDirectoryStudentsPACs());
-        File[] filesSorted = folder.listFiles();
+        File[] filesSorted = Arrays.stream(folder.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
+        //File[] filesSorted = folder.listFiles();
         assert filesSorted != null;
         Arrays.sort(filesSorted);
 
@@ -53,7 +59,8 @@ public class ResultService {
             dirResultStudent.mkdir();
 
             //TODO maybe performance problem
-            File[] listExercisesDirectory = file.listFiles();
+            //File[] listExercisesDirectory = file.listFiles();
+            File[] listExercisesDirectory = Arrays.stream(file.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
             assert listExercisesDirectory != null;
             Arrays.sort(listExercisesDirectory, Comparator.comparing(File::getName));
 
@@ -88,7 +95,13 @@ public class ResultService {
                                 //System.out.println(xmlFile.getName());
                             }
                         }
-                        List<Testsuite> listTestsuite = this.parserTestSuite(exerciseCurrent.getName(), xmlFiles);
+                        File invocationResultsFile = new File(exerciseCurrent.getAbsolutePath()
+                                + "/build/test-results/correction-methods/test.tsv");
+                        List<ParameterizedTestAggregator.InvocationResult> invocationResults =
+                                readInvocationResults(invocationResultsFile);
+                        List<Testsuite> listTestsuite = this.parserTestSuite(
+                                exerciseCurrent.getName(), xmlFiles, invocationResults);
+                        warnForMissingTestClasses(exerciseCurrent.getName(), listTestsuite);
                         exercise.setTestsuiteList(listTestsuite);
                         listExercises.add(exercise);
                     }else{
@@ -110,7 +123,8 @@ public class ResultService {
         return students;
     }
 
-    private List<Testsuite> parserTestSuite(String exerciseName, List<File> xmlFiles){
+    private List<Testsuite> parserTestSuite(String exerciseName, List<File> xmlFiles,
+                                            List<ParameterizedTestAggregator.InvocationResult> invocationResults){
         JAXBContext jaxbContext;
 
         List<Testsuite> listTestsuite = new ArrayList<>();
@@ -124,11 +138,20 @@ public class ResultService {
                 //search exercise name in hashmap, and test name in list (loop)
                 //List<TestNote> listTestNote = configuration.getMapExercisesTests().get(exerciseName);
                 ExerciceConfiguration exerciceConfiguration = configuration.getMapExercisesTests().get(exerciseName);
-                for(TestNote current: exerciceConfiguration.getListTestNote()){
-                    if(testsuite.getName().endsWith(current.getTestName())){
-                        testsuite.setScore(current.getScore());
-                        break;
+                if (exerciceConfiguration != null) {
+                    for(TestNote current: exerciceConfiguration.getListTestNote()){
+                        String testsuiteClassName = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
+                        if(testsuiteClassName.equals(current.getTestName())){
+                            testsuite.setScore(current.getScore());
+                            break;
+                        }
                     }
+                }
+                ParameterizedTestAggregator.AggregationResult aggregationResult =
+                        new ParameterizedTestAggregator().aggregate(
+                                testsuite, invocationResults, exerciceConfiguration);
+                for (String warning : aggregationResult.getWarnings()) {
+                    System.out.println("[WARNING] " + warning);
                 }
                 listTestsuite.add(testsuite);
 
@@ -137,6 +160,41 @@ public class ResultService {
             }
         }
         return listTestsuite;
+    }
+
+    private List<ParameterizedTestAggregator.InvocationResult> readInvocationResults(File file) {
+        try {
+            return new ParameterizedTestAggregator().readInvocationResults(file);
+        } catch (IOException e) {
+            System.out.println("[WARNING] Could not read grouped test results from "
+                    + file.getAbsolutePath() + ": " + e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private void warnForMissingTestClasses(String exerciseName, List<Testsuite> testsuites) {
+        ExerciceConfiguration exerciceConfiguration =
+                configuration.getMapExercisesTests().get(exerciseName);
+        if (exerciceConfiguration == null) {
+            return;
+        }
+
+        for (TestNote testNote : exerciceConfiguration.getListTestNote()) {
+            boolean classFound = false;
+            for (Testsuite testsuite : testsuites) {
+                String className = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
+                if (className.equals(testNote.getTestName())) {
+                    classFound = true;
+                    break;
+                }
+            }
+            if (!classFound) {
+                for (String methodName : testNote.getMethodsNote().keySet()) {
+                    System.out.println("[WARNING] Configured test '" + testNote.getTestName() + "."
+                            + methodName + "' was not found in test results.");
+                }
+            }
+        }
     }
 
     public void html(List<Student> students){
@@ -165,36 +223,38 @@ public class ResultService {
 
                 if(exercise.getTestsuiteList() != null){
                     for (Testsuite testsuite : exercise.getTestsuiteList()){
+                        String testClassName = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
+                        if (configuration.getMapExercisesTests().get(exercise.getName()) != null) {
+                            boolean isScoreByMethods = configuration.getMapExercisesTests().get(exercise.getName()).isScoreByMethods();
 
-                        boolean isScoreByMethods = configuration.getMapExercisesTests().get(exercise.getName()).isScoreByMethods();
-
-                        double noteTotalByMethod = 0;
-                        if(isScoreByMethods){
-                            for (Testcase testcase : testsuite.getTestcase()){
-                                if(testcase.getFailure() == null){
-                                    for (TestNote testNote : configuration.getMapExercisesTests().get(exercise.getName()).getListTestNote()){
-                                        if(testNote.getMethodsNote().size() > 0){
-                                            noteTotalByMethod += testNote.getMethodsNote().get(testcase.getName());
+                            double noteTotalByMethod = 0;
+                            if(isScoreByMethods){
+                                for (Testcase testcase : testsuite.getTestcase()){
+                                    if(testcase.getFailure() == null){
+                                        for (TestNote testNote : configuration.getMapExercisesTests().get(exercise.getName()).getListTestNote()){
+                                            if(testNote.getTestName().equals(testClassName) && testNote.getMethodsNote().size() > 0 && testNote.getMethodsNote().containsKey(testcase.getName())){
+                                                noteTotalByMethod += testNote.getMethodsNote().get(testcase.getName());
+                                            }
                                         }
                                     }
                                 }
                             }
+
+                            testsTotal = testsTotal + testsuite.getTests();
+                            failuresTotal = failuresTotal + testsuite.getFailures();
+                            errorsTotal = errorsTotal + testsuite.getErrors();
+                            scoreTotal = scoreTotal + testsuite.getScore();
+
+                            int success = ((testsuite.getTests() - testsuite.getFailures() - testsuite.getErrors()) * 100) / testsuite.getTests();
+                            double note;
+                            if(isScoreByMethods){
+                                note = noteTotalByMethod;
+                            }else{
+                                note = (testsuite.getScore() * success)/100;
+                            }
+
+                            noteTotal = noteTotal + note;
                         }
-
-                        testsTotal = testsTotal + testsuite.getTests();
-                        failuresTotal = failuresTotal + testsuite.getFailures();
-                        errorsTotal = errorsTotal + testsuite.getErrors();
-                        scoreTotal = scoreTotal + testsuite.getScore();
-
-                        int success = ((testsuite.getTests() - testsuite.getFailures() - testsuite.getErrors()) * 100) / testsuite.getTests();
-                        double note;
-                        if(isScoreByMethods){
-                            note = noteTotalByMethod;
-                        }else{
-                            note = (testsuite.getScore() * success)/100;
-                        }
-
-                        noteTotal = noteTotal + note;
 
                     }
                     notePAC = notePAC + noteTotal;
@@ -203,6 +263,8 @@ public class ResultService {
             }
 
             //System.out.println("NOTA PAC: "+notePAC);
+
+            studentScores.put(student.getName(), notePAC);
 
             //todo fran
             for (Map.Entry<String, ExerciceConfiguration> entry : configuration.getMapExercisesTests().entrySet()) {
@@ -239,37 +301,61 @@ public class ResultService {
         }
     }
 
-    public void zips(){
+    public void zips() throws IOException {
         System.out.println(System.lineSeparator() + "############ Generate ZIP files ############");
         File folder = new File(configuration.getDirectoryReportsPACs());
-        /*PrintStream fileStream = null;
-        try {
-            fileStream = new PrintStream(configuration.getDirectoryReportsPACs() +"/"+ "PASSWORDS.txt");
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
-        System.setOut(fileStream);*/
 
         //TODO maybe performance problem
-        File[] corrections = folder.listFiles();
+        //File[] corrections = folder.listFiles();
+        File[] corrections = Arrays.stream(folder.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
         assert corrections != null;
         Arrays.sort(corrections, Comparator.comparing(File::getName));
 
         ZipParameters zipParameters = new ZipParameters();
-        //zipParameters.setEncryptFiles(true);
+        zipParameters.setEncryptFiles(true);
         zipParameters.setCompressionLevel(CompressionLevel.NORMAL);
-        //zipParameters.setEncryptionMethod(EncryptionMethod.AES);
-        for (File current : corrections) {
-            if(current.isDirectory()){
-                //String password = RandomStringUtils.randomAlphanumeric(10);
-                //System.out.println(current.getName()+".zip - " + password);
+        zipParameters.setEncryptionMethod(EncryptionMethod.AES);
+        try (Writer passwordWriter = Files.newBufferedWriter(
+                Paths.get(configuration.getDirectoryReportsPACs(), "PASSWORDS.txt"),
+                StandardCharsets.UTF_8)) {
+            for (File current : corrections) {
+                if (current.isDirectory()) {
+                    String studentName = current.getName();
+                    String password = RandomStringUtils.randomAlphanumeric(10);
+                    Double note = studentScores.get(studentName);
+                    if (note == null) {
+                        System.out.println("[WARNING] Skipping report directory without a current student score: "
+                                + studentName);
+                        continue;
+                    }
 
-                //ZipFile zipFile = new ZipFile(configuration.getDirectoryReportsPACs() + "/" + current.getName() + ".zip", password.toCharArray());
-                ZipFile zipFile = new ZipFile(configuration.getDirectoryReportsPACs() + "/" + current.getName() + ".zip");
-                try {
-                    zipFile.addFolder(current, zipParameters);
-                } catch (ZipException e) {
-                    e.printStackTrace();
+                    ZipFile zipFile = new ZipFile(
+                            Paths.get(configuration.getDirectoryReportsPACs(), studentName + ".zip").toFile(),
+                            password.toCharArray());
+                    try {
+                        zipFile.addFolder(current, zipParameters);
+                    } catch (ZipException e) {
+                        throw new IllegalStateException("Could not create ZIP for student " + studentName, e);
+                    }
+
+                    String[] splitName = studentName.split("_PEC_");
+                    String username = splitName[0];
+                    passwordWriter.write("Estudiante: " + username + System.lineSeparator());
+                    passwordWriter.write("Fichero: " + studentName + ".zip" + System.lineSeparator());
+                    passwordWriter.write("Password: " + password + System.lineSeparator());
+                    passwordWriter.write("Mensaje:" + System.lineSeparator());
+                    passwordWriter.write("-----" + System.lineSeparator());
+                    passwordWriter.write("Hola," + System.lineSeparator() + System.lineSeparator());
+                    passwordWriter.write("Tu nota numérica es un "
+                            + String.format(Locale.ROOT, "%.2f", note)
+                            + ". Puedes ver desglosada tus puntuaciones en la imagen adjunta. Además, te adjunto un "
+                            + "fichero .zip que contiene el informe en HTML del resultado de la ejecución de los "
+                            + "tests y la nota obtenida. Para descomprimir el informe, debes usar el password \""
+                            + password + "\"." + System.lineSeparator() + System.lineSeparator());
+                    passwordWriter.write("Te recomiendo comparar y analizar tus soluciones con las proporcionadas. "
+                            + "Esto te ayudará a seguir mejorando!!" + System.lineSeparator() + System.lineSeparator());
+                    passwordWriter.write("Un saludo" + System.lineSeparator());
+                    passwordWriter.write("-----" + System.lineSeparator() + System.lineSeparator());
                 }
             }
         }
