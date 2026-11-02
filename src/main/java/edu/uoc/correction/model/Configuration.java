@@ -19,7 +19,7 @@ public class Configuration {
     TreeMap<String, ExerciceConfiguration> mapExercisesTests;
     private double scorePAC;
 
-    public Configuration(){
+    public Configuration() {
         mapExercisesTests = new TreeMap<>();
 
         Scanner sc = null;
@@ -70,10 +70,10 @@ public class Configuration {
 
                     if(methods != null){
                         exerciceConfiguration.setScoreByMethods(true);
-                        String[] splitMethods = methods.split(",");
-                        for(String method : splitMethods){
-                            String methodName = method.split(":")[0].trim();
-                            Double methodScore = Double.parseDouble(method.split(":")[1].trim());
+                        for(String method : splitMethodScores(methods)){
+                            int idx = method.lastIndexOf(":");
+                            String methodName = method.substring(0, idx).trim();
+                            Double methodScore = Double.parseDouble(method.substring(idx + 1).trim());
                             testNote.getMethodsNote().put(methodName, methodScore);
                         }
                     }
@@ -82,8 +82,15 @@ public class Configuration {
                     notePAC += testNote.getScore();
 
                 }
-                exerciceConfiguration.setListTestNote(listTestNotes);
-                this.getMapExercisesTests().put(exerciseName, exerciceConfiguration);
+                //Changed by Werner
+                //exerciceConfiguration.setListTestNote(listTestNotes);
+                //this.getMapExercisesTests().put(exerciseName, exerciceConfiguration);
+                if (this.getMapExercisesTests().containsKey(exerciseName)) {
+                    this.getMapExercisesTests().get(exerciseName).getListTestNote().add(listTestNotes.get(0));
+                } else {
+                    exerciceConfiguration.setListTestNote(listTestNotes);
+                    this.getMapExercisesTests().put(exerciseName, exerciceConfiguration);
+                }
             }
 
         }
@@ -137,5 +144,32 @@ public class Configuration {
 
     public void setScorePAC(double scorePAC) {
         this.scorePAC = scorePAC;
+    }
+
+    private List<String> splitMethodScores(String methods) {
+        List<String> parsedMethods = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        for (String token : methods.split(",")) {
+            if (current.length() > 0) {
+                current.append(", ");
+            }
+            current.append(token.trim());
+
+            String candidate = current.toString();
+            int idx = candidate.lastIndexOf(":");
+            if (idx > 0) {
+                String scorePart = candidate.substring(idx + 1).trim();
+                try {
+                    Double.parseDouble(scorePart);
+                    parsedMethods.add(candidate);
+                    current.setLength(0);
+                } catch (NumberFormatException ignored) {
+                    // Keep accumulating fragments until we have a valid trailing numeric score.
+                }
+            }
+        }
+
+        return parsedMethods;
     }
 }

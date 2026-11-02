@@ -1,11 +1,18 @@
 package edu.uoc.correction.service;
 import edu.uoc.correction.model.Configuration;
+
+import java.nio.file.Path;
+import java.util.Objects;
 import org.apache.commons.io.FileUtils;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.function.Predicate;
 
 /**
  * @author Fran Manez
@@ -29,15 +36,17 @@ public class GradleService {
     }
 
     private void copyOriginalTests(String exerciseName, String url) throws IOException{
-        exerciseName = exerciseName.endsWith("_sol") ? exerciseName.split("_")[0] : exerciseName;
-        File srcDir = new File(configuration.getDirectoryTestsPACs() + "/" + exerciseName);
-        File destDir = new File(url);
-        FileUtils.copyDirectory(srcDir, destDir);
+        if (!exerciseName.equals("PAC3Ex4")) {
+            exerciseName = exerciseName.endsWith("_sol") ? exerciseName.split("_")[0] : exerciseName;
+            File srcDir = new File(configuration.getDirectoryTestsPACs() + "/" + exerciseName.trim());
+            File destDir = new File(url);
+            FileUtils.copyDirectory(srcDir, destDir);
+        }
     }
 
-    private void myExecRuntime(String command) throws IOException {
+    private void myExecRuntime(String[] command) throws IOException {
         long init = System.currentTimeMillis();
-        Process p = Runtime.getRuntime().exec(command);
+        Process p = Runtime.getRuntime().exec(command/*, null, new File("/Users")*/);
         try {
             p.waitFor();
         } catch (InterruptedException e) {
@@ -49,6 +58,25 @@ public class GradleService {
         p.destroy();
     }
 
+    private void myExecRuntime2(String[] command) throws IOException {
+        long init = System.currentTimeMillis();
+        try {
+            Process process = new ProcessBuilder(command).start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    //System.out.println(line);
+                }
+            }
+            int exitCode = process.waitFor();
+            //System.out.println("Exit Code: " + exitCode);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        long end = System.currentTimeMillis();
+        System.out.println(" Duration: " + (double) ((end - init)/1000) +" seconds");
+    }
+
     public void run() throws IOException{
 
         setGradlewExecutableOS();
@@ -57,18 +85,20 @@ public class GradleService {
         int cont = 1;
 
         //TODO maybe performance problem
-        File[] listExercisesDirectory = folder.listFiles();
+        File[] listExercisesDirectory = Arrays.stream(Objects.requireNonNull(folder.listFiles())).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
+        //File[] listExercisesDirectory = folder.listFiles();
         assert listExercisesDirectory != null;
         Arrays.sort(listExercisesDirectory, Comparator.comparing(File::getName));
 
         for (File studentDirectory : listExercisesDirectory) {
-            if(studentDirectory.isDirectory()) {
+            if(studentDirectory.isDirectory()/* && !studentDirectory.isHidden()*/) {
 
                 String studentName = studentDirectory.getName().split("_")[0]+"_"+studentDirectory.getName().split("_")[1];
                 System.out.println(System.lineSeparator() + "_______________________ " + cont + " - " + studentName + " _______________________");
 
                 //TODO maybe performance problem
-                File[] listExercises = studentDirectory.listFiles();
+                //File[] listExercises = studentDirectory.listFiles();
+                File[] listExercises = Arrays.stream(studentDirectory.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
                 assert listExercises != null;
                 Arrays.sort(listExercises, Comparator.comparing(File::getName));
 
@@ -81,18 +111,26 @@ public class GradleService {
                         copyOriginalTests(exercise.getName(), exercise.getAbsolutePath());
 
                         //Gradle clean
-                        String commandClean = GRADLEW_EXECUTABLE + " -b " + exercise.getAbsolutePath() + "/build.gradle clean";
+                        //String[] commandClean = new String[] {GRADLEW_EXECUTABLE + " -b " + exercise.getAbsolutePath() + "/build.gradle clean"};
+                        //String[] commandClean = new String[] {GRADLEW_EXECUTABLE, " -b ", exercise.getAbsolutePath() + "/build.gradle", " clean"};
+                        String[] commandClean = new String[] {GRADLEW_EXECUTABLE, "-b", exercise.getAbsolutePath() + "/build.gradle", "clean"};
                         System.out.print("\tExecuting gradle CLEAN: ");
-                        myExecRuntime(commandClean);
+                        //System.out.println("DISABLED until repairing");
+                        //myExecRuntime(commandClean);
+                        myExecRuntime2(commandClean);
 
-                        //check is package not void (Windows problem)
-                        File dirPackage = new File(exercise.getAbsolutePath()+"/src/main/java/edu/uoc/"+configuration.getName().toLowerCase());
-                        if(dirPackage.listFiles().length > 0){
-                            //Gradle test
-                            String commandTest = GRADLEW_EXECUTABLE + " -b " + exercise.getAbsolutePath() + "/build.gradle test";
-                            System.out.print("\tExecuting gradle  TEST: ");
-                            myExecRuntime(commandTest);
-                        }
+                        //Gradle test
+                        //String[] commandTest = new String[] {GRADLEW_EXECUTABLE + " -b " + exercise.getAbsolutePath() + "/build.gradle test"};
+                        //String[] commandTest = new String[] {GRADLEW_EXECUTABLE, " -b ", exercise.getAbsolutePath() + "/build.gradle", " test"};
+                        //String[] commandTest = new String[] {GRADLEW_EXECUTABLE, "-b " + exercise.getAbsolutePath() + "/build.gradle test"};
+                        String testListener = System.getProperty("user.dir")
+                                + "/src/main/resources/gradle-test-listener.init.gradle";
+                        String[] commandTest = new String[] {GRADLEW_EXECUTABLE, "-I", testListener,
+                                "-b", exercise.getAbsolutePath() + "/build.gradle", "test"};
+                        System.out.print("\tExecuting gradle  TEST: ");
+                        //System.out.println("DISABLED until repairing");
+                        //myExecRuntime(commandTest);
+                        myExecRuntime2(commandTest);
                     }
                 }
             }
@@ -100,4 +138,3 @@ public class GradleService {
         }
     }
 }
-
