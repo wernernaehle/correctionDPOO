@@ -3,7 +3,7 @@ package edu.uoc.correction.model;
 import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 public class ExerciceConfiguration {
@@ -24,5 +24,20 @@ public class ExerciceConfiguration {
 
     public void setScoreByMethods(boolean scoreByMethods) {
         this.scoreByMethods = scoreByMethods;
+    }
+
+    public boolean isScoreByMethodsForClass(String className) {
+        if (className == null || listTestNote == null) {
+            return false;
+        }
+        String simpleClassName = className.substring(className.lastIndexOf('.') + 1);
+        for (TestNote testNote : listTestNote) {
+            if (simpleClassName.equals(testNote.getTestName())
+                    && testNote.getMethodsNote() != null
+                    && !testNote.getMethodsNote().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 }

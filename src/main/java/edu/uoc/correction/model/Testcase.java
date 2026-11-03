@@ -2,9 +2,10 @@ package edu.uoc.correction.model;
 
 import javax.xml.bind.annotation.*;
 import java.io.Serializable;
+import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 @XmlRootElement(name = "testcase")
@@ -22,6 +23,12 @@ public class Testcase implements Serializable {
     private int successful;
 
     private Failure failure;
+
+    @XmlTransient
+    private boolean grouped;
+
+    @XmlTransient
+    private List<Testcase> invocations;
 
     public String getName() {
         return name;
@@ -61,6 +68,22 @@ public class Testcase implements Serializable {
 
     public void setFailure(Failure failure) {
         this.failure = failure;
+    }
+
+    public boolean isGrouped() {
+        return grouped;
+    }
+
+    public void setGrouped(boolean grouped) {
+        this.grouped = grouped;
+    }
+
+    public List<Testcase> getInvocations() {
+        return invocations;
+    }
+
+    public void setInvocations(List<Testcase> invocations) {
+        this.invocations = invocations;
     }
 
     @Override

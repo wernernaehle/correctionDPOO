@@ -2,3 +2,8 @@
 /2_CORRECTIONS/*
 /.gradle/
 /build/
+.gradle/
+build/
+out/
+.idea/
+*.iml

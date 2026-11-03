@@ -9,7 +9,7 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 @XmlRootElement(name = "testsuite")

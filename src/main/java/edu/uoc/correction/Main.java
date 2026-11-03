@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 public class Main {

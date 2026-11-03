@@ -1,0 +1,65 @@
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
+import org.gradle.api.tasks.testing.TestResult
+
+allprojects {
+    tasks.withType(Test).configureEach { testTask ->
+        File resultFile = new File(testTask.project.buildDir,
+                "test-results/correction-methods/${testTask.name}.tsv")
+        Object resultFileLock = new Object()
+
+        testTask.doFirst {
+            try {
+                resultFile.parentFile.mkdirs()
+                resultFile.text = ""
+            } catch (IOException e) {
+                System.err.println("WARN: Could not initialize grouped test results: " + e.message)
+            }
+        }
+
+        testTask.addTestListener(new TestListener() {
+            void beforeSuite(TestDescriptor descriptor) {}
+
+            void afterSuite(TestDescriptor descriptor, TestResult result) {}
+
+            void beforeTest(TestDescriptor descriptor) {}
+
+            void afterTest(TestDescriptor descriptor, TestResult result) {
+                TestDescriptor methodDescriptor = descriptor.parent
+                while (methodDescriptor != null && methodDescriptor.parent != null
+                        && methodDescriptor.parent.name != descriptor.className) {
+                    methodDescriptor = methodDescriptor.parent
+                }
+                String methodName = ""
+                if (methodDescriptor != null && methodDescriptor.parent != null
+                        && methodDescriptor.parent.name == descriptor.className) {
+                    methodName = methodDescriptor.name ?: ""
+                }
+
+                String exceptionTypes = result.exceptions.collect { it.class.name }.join("\n")
+                String messages = result.exceptions.collect { it.message ?: "" }.join("\n")
+                String row = [
+                        encode(descriptor.className ?: ""),
+                        encode(methodName),
+                        encode(descriptor.name ?: ""),
+                        result.resultType.name(),
+                        encode(messages),
+                        encode(exceptionTypes)
+                ].join("\t") + "\n"
+
+                synchronized (resultFileLock) {
+                    try {
+                        resultFile.withWriterAppend("UTF-8") { writer -> writer.write(row) }
+                    } catch (IOException e) {
+                        System.err.println("WARN: Could not write grouped test results: " + e.message)
+                    }
+                }
+            }
+
+            private String encode(String value) {
+                return Base64.encoder.encodeToString(value.getBytes("UTF-8"))
+            }
+        })
+    }
+}
