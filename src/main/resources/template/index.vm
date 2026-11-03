@@ -245,9 +245,12 @@
                                         <th scope="col">$testsTotal</th>
                                         <th scope="col">$failuresTotal</th>
                                         <th scope="col">$successfulTotal %</th>
-                                        <th scope="col">$math.roundTo(2, $noteTotal)</th>
+                                        <th scope="col">#if($exercise.minimumRequirementsFailed)$math.roundTo(2, 0)#else$math.roundTo(2, $noteTotal)#end</th>
                                         <th scope="col"></th>
                                     </tr>
+#if($exercise.minimumRequirementsFailed)
+                                    <tr><td colspan="7"><span class="text-danger">No se cumplen los requisitos mínimos del ejercicio $exercise.name. La puntuación del ejercicio es 0. Tests obligatorios no superados: #foreach($requirement in $exercise.failedMinimumRequirements)<code>$requirement.displayName</code>#if($foreach.hasNext), #end#end</span></td></tr>
+#end
                                 </tfoot>
                             #else
                                 <tfoot>

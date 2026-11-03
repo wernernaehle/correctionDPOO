@@ -4,6 +4,7 @@ import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.ExerciceConfiguration;
 import edu.uoc.correction.model.Exercise;
 import edu.uoc.correction.model.Failure;
+import edu.uoc.correction.model.MinimumRequirement;
 import edu.uoc.correction.model.TestNote;
 import edu.uoc.correction.model.Testcase;
 import edu.uoc.correction.model.Testsuite;
@@ -18,6 +19,109 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ScoreCalculationServiceTest {
+
+    @Test
+    void awardsNormalScoreWhenEveryMinimumRequirementPasses() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, false, false);
+
+        assertEquals(1.0, calculate(configuration, exercise));
+        assertEquals(0, exercise.getFailedMinimumRequirements().size());
+    }
+
+    @Test
+    void zerosExerciseWhenMinimumRequirementFailsEvenIfOtherTestsPass() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, true, false);
+
+        assertEquals(0.0, calculate(configuration, exercise));
+        assertEquals(1, exercise.getFailedMinimumRequirements().size());
+        assertEquals("ExampleTest#required display name",
+                exercise.getFailedMinimumRequirements().get(0).getDisplayName());
+    }
+
+    @Test
+    void zerosExerciseWhenMinimumRequirementWasNotExecuted() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, false, true);
+
+        assertEquals(0.0, calculate(configuration, exercise));
+        assertEquals("ExampleTest#requiredParameterized()",
+                exercise.getFailedMinimumRequirements().get(0).getDisplayName());
+    }
+
+    @Test
+    void treatsFailedParameterizedGroupAsFailedMinimumRequirement() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, false, false);
+        Testcase parameterized = exercise.getTestsuiteList().get(0).getTestcase().get(2);
+        parameterized.getInvocations().get(0)
+                .setFailure(new Failure("One invocation failed.", "InvocationFailure"));
+
+        assertEquals(0.0, calculate(configuration, exercise));
+        assertEquals("ExampleTest#requiredParameterized()",
+                exercise.getFailedMinimumRequirements().get(0).getDisplayName());
+    }
+
+    @Test
+    void treatsSkippedMinimumRequirementAsNotPassed() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, false, false);
+        exercise.getTestsuiteList().get(0).getTestcase().get(1)
+                .setSkipped(new Failure("Disabled", "Skipped"));
+
+        assertEquals(0.0, calculate(configuration, exercise));
+        assertEquals("ExampleTest#required display name",
+                exercise.getFailedMinimumRequirements().get(0).getDisplayName());
+    }
+
+    @Test
+    void minimumRequirementsDoNotAffectOtherExercises() {
+        Configuration configuration = new Configuration();
+        Exercise requiredExercise = minimumRequirementsExercise(configuration, false, true, false);
+        ExerciceConfiguration otherExerciseConfiguration = new ExerciceConfiguration();
+        configuration.getMapExercisesTests().put("PAC2Ex2", otherExerciseConfiguration);
+
+        Testcase ordinary = new Testcase();
+        ordinary.setName("ordinary()");
+        Testsuite otherExerciseSuite = new Testsuite();
+        otherExerciseSuite.setName("edu.uoc.pac2.OtherTest");
+        otherExerciseSuite.setTests(1);
+        otherExerciseSuite.setFailures(0);
+        otherExerciseSuite.setErrors(0);
+        otherExerciseSuite.setScore(0.25);
+        otherExerciseSuite.setTestcase(Collections.singletonList(ordinary));
+        Exercise otherExercise = new Exercise();
+        otherExercise.setName("PAC2Ex2");
+        otherExercise.setTestsuiteList(Collections.singletonList(otherExerciseSuite));
+
+        List<Double> exerciseScores = new ArrayList<>();
+        double studentScore = new ScoreCalculationService(configuration).calculateStudentScore(
+                Arrays.asList(requiredExercise, otherExercise), exerciseScores);
+
+        assertEquals(0.25, studentScore);
+        assertEquals(Arrays.asList(0.0, 0.25), exerciseScores);
+        assertEquals(0, otherExercise.getFailedMinimumRequirements().size());
+    }
+
+    @Test
+    void nonRequiredFailureKeepsNormalScoreWhenRequirementsPass() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, true, false, false);
+
+        assertEquals(0.8, calculate(configuration, exercise), 0.0000001);
+        assertEquals(0, exercise.getFailedMinimumRequirements().size());
+    }
+
+    @Test
+    void compileFailureDoesNotEvaluateMinimumRequirements() {
+        Configuration configuration = new Configuration();
+        Exercise exercise = minimumRequirementsExercise(configuration, false, false, false);
+        exercise.setTestsuiteList(null);
+
+        assertEquals(0.0, calculate(configuration, exercise));
+        assertEquals(0, exercise.getFailedMinimumRequirements().size());
+    }
 
     @Test
     void deductsTheFailedParameterizedMethodFromTheClassScore() {
@@ -134,5 +238,59 @@ class ScoreCalculationServiceTest {
         methodsNote.put(methodName, methodScore);
         testNote.setMethodsNote(methodsNote);
         return testNote;
+    }
+
+    private Exercise minimumRequirementsExercise(Configuration configuration,
+                                                 boolean failNonRequired,
+                                                 boolean failDisplayName,
+                                                 boolean omitParameterized) {
+        ExerciceConfiguration exerciseConfiguration = new ExerciceConfiguration();
+        exerciseConfiguration.setScoreByMethods(true);
+
+        TestNote testNote = new TestNote();
+        testNote.setTestName("ExampleTest");
+        testNote.setScore(1.0);
+        HashMap<String, Double> methodNotes = new HashMap<>();
+        methodNotes.put("ordinary()", 0.2);
+        methodNotes.put("required display name", 0.4);
+        methodNotes.put("requiredParameterized()", 0.4);
+        testNote.setMethodsNote(methodNotes);
+        exerciseConfiguration.setListTestNote(Collections.singletonList(testNote));
+        exerciseConfiguration.setMinimumRequirements(Arrays.asList(
+                new MinimumRequirement("ExampleTest", "required display name"),
+                new MinimumRequirement("ExampleTest", "requiredParameterized()")));
+        configuration.getMapExercisesTests().put("PAC2Ex1", exerciseConfiguration);
+
+        List<Testcase> testcases = new ArrayList<>();
+        testcases.add(testcase("ordinary()", failNonRequired));
+        testcases.add(testcase("required display name", failDisplayName));
+        if (!omitParameterized) {
+            Testcase parameterized = testcase("requiredParameterized()", false);
+            parameterized.setGrouped(true);
+            parameterized.setInvocations(Collections.singletonList(testcase("[1] value", false)));
+            testcases.add(parameterized);
+        }
+
+        Testsuite testsuite = new Testsuite();
+        testsuite.setName("edu.uoc.pac2.ExampleTest");
+        testsuite.setTestcase(testcases);
+        Exercise exercise = new Exercise();
+        exercise.setName("PAC2Ex1");
+        exercise.setTestsuiteList(Collections.singletonList(testsuite));
+        return exercise;
+    }
+
+    private double calculate(Configuration configuration, Exercise exercise) {
+        return new ScoreCalculationService(configuration)
+                .calculateStudentScore(Collections.singletonList(exercise), new ArrayList<>());
+    }
+
+    private Testcase testcase(String name, boolean failed) {
+        Testcase testcase = new Testcase();
+        testcase.setName(name);
+        if (failed) {
+            testcase.setFailure(new Failure("failed", "AssertionError"));
+        }
+        return testcase;
     }
 }

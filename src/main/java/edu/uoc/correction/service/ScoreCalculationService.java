@@ -3,6 +3,7 @@ package edu.uoc.correction.service;
 import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.ExerciceConfiguration;
 import edu.uoc.correction.model.Exercise;
+import edu.uoc.correction.model.MinimumRequirement;
 import edu.uoc.correction.model.TestNote;
 import edu.uoc.correction.model.Testcase;
 import edu.uoc.correction.model.Testsuite;
@@ -32,6 +33,9 @@ final class ScoreCalculationService {
                 continue;
             }
             double exerciseScore = 0;
+            List<MinimumRequirement> failedRequirements =
+                    findFailedMinimumRequirements(exercise);
+            exercise.setFailedMinimumRequirements(failedRequirements);
             if (exercise.getTestsuiteList() != null) {
                 for (Testsuite testsuite : exercise.getTestsuiteList()) {
                     if (testsuite == null) {
@@ -41,11 +45,67 @@ final class ScoreCalculationService {
                     }
                     exerciseScore += calculateTestsuiteScore(exercise, testsuite);
                 }
+                if (!failedRequirements.isEmpty()) {
+                    exerciseScore = 0;
+                }
                 exerciseScores.add(exerciseScore);
             }
             studentScore += exerciseScore;
         }
         return studentScore;
+    }
+
+    private List<MinimumRequirement> findFailedMinimumRequirements(Exercise exercise) {
+        List<MinimumRequirement> failedRequirements = new java.util.ArrayList<>();
+        if (exercise.getTestsuiteList() == null) {
+            return failedRequirements;
+        }
+
+        ExerciceConfiguration exerciseConfiguration =
+                configuration.getMapExercisesTests().get(exercise.getName());
+        if (exerciseConfiguration == null) {
+            return failedRequirements;
+        }
+
+        for (MinimumRequirement requirement : exerciseConfiguration.getMinimumRequirements()) {
+            boolean found = false;
+            boolean passed = true;
+            for (Testsuite testsuite : exercise.getTestsuiteList()) {
+                if (testsuite == null || !requirement.getTestClass().equals(simpleClassName(testsuite.getName()))
+                        || testsuite.getTestcase() == null) {
+                    continue;
+                }
+                for (Testcase testcase : testsuite.getTestcase()) {
+                    if (testcase != null && requirement.getTestName().equals(testcase.getName())) {
+                        found = true;
+                        if (hasNotPassed(testcase)) {
+                            passed = false;
+                        }
+                    }
+                }
+            }
+            if (!found || !passed) {
+                failedRequirements.add(requirement);
+            }
+        }
+        return failedRequirements;
+    }
+
+    private boolean hasNotPassed(Testcase testcase) {
+        return testcase.getFailure() != null
+                || testcase.isSkipped()
+                || (testcase.isGrouped()
+                && (testcase.getInvocations() == null
+                || testcase.getInvocations().isEmpty()
+                || testcase.getInvocations().stream().anyMatch(invocation ->
+                invocation.getFailure() != null || invocation.isSkipped())));
+    }
+
+    private String simpleClassName(String className) {
+        if (className == null) {
+            return "";
+        }
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     private double calculateTestsuiteScore(Exercise exercise, Testsuite testsuite) {

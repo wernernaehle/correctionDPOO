@@ -67,6 +67,72 @@ class ConfigurationCharacterizationTest {
     }
 
     @Test
+    void parsesMinimumRequirementsUsingConfiguredDisplayAndMethodNames(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Configuration configuration = loadConfiguration(temporaryDirectory,
+                "deliveries=/students\n"
+                        + "reports=/reports\n"
+                        + "tests=/tests\n"
+                        + "name=PAC2\n"
+                        + "PAC2Ex1=DisplayTest:1.0#Readable display name:0.5, parameterized():0.5\n"
+                        + "PAC2Ex1.minimumRequirements = DisplayTest#Readable display name, "
+                        + "DisplayTest#parameterized()\n");
+
+        List<MinimumRequirement> requirements = configuration.getMapExercisesTests()
+                .get("PAC2Ex1").getMinimumRequirements();
+        assertEquals(2, requirements.size());
+        assertEquals("DisplayTest#Readable display name", requirements.get(0).getDisplayName());
+        assertEquals("DisplayTest#parameterized()", requirements.get(1).getDisplayName());
+    }
+
+    @Test
+    void acceptsAnEmptyMinimumRequirementsProperty(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Configuration configuration = loadConfiguration(temporaryDirectory,
+                "deliveries=/students\n"
+                        + "reports=/reports\n"
+                        + "tests=/tests\n"
+                        + "name=PAC2\n"
+                        + "PAC2Ex1=ExampleTest:1.0\n"
+                        + "PAC2Ex1.minimumRequirements = \n");
+
+        assertTrue(configuration.getMapExercisesTests().get("PAC2Ex1")
+                .getMinimumRequirements().isEmpty());
+    }
+
+    @Test
+    void rejectsMinimumRequirementNotPresentInExerciseScoreDefinition(@TempDir Path temporaryDirectory)
+            throws IOException {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> loadConfiguration(temporaryDirectory,
+                        "deliveries=/students\n"
+                                + "reports=/reports\n"
+                                + "tests=/tests\n"
+                                + "name=PAC2\n"
+                                + "PAC2Ex1=ExampleTest:1.0#configured():1.0\n"
+                                + "PAC2Ex1.minimumRequirements = ExampleTest#missing()\n"));
+
+        assertTrue(failure.getMessage().contains("PAC2Ex1"));
+        assertTrue(failure.getMessage().contains("ExampleTest#missing()"));
+        assertTrue(failure.getMessage().contains("not present"));
+    }
+
+    @Test
+    void rejectsMalformedMinimumRequirement(@TempDir Path temporaryDirectory) throws IOException {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> loadConfiguration(temporaryDirectory,
+                        "deliveries=/students\n"
+                                + "reports=/reports\n"
+                                + "tests=/tests\n"
+                                + "name=PAC2\n"
+                                + "PAC2Ex1=ExampleTest:1.0#configured():1.0\n"
+                                + "PAC2Ex1.minimumRequirements = ExampleTest#\n"));
+
+        assertTrue(failure.getMessage().contains("PAC2Ex1"));
+        assertTrue(failure.getMessage().contains("Class#testName"));
+    }
+
+    @Test
     void emptyConfigurationRetainsScannerFailure(@TempDir Path temporaryDirectory) throws IOException {
         NoSuchElementException failure = assertThrows(NoSuchElementException.class,
                 () -> loadConfiguration(temporaryDirectory, ""));

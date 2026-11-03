@@ -3,7 +3,9 @@ package edu.uoc.correction.model;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.TreeMap;
 import java.util.logging.Level;
@@ -49,8 +51,17 @@ public class Configuration {
     private double parseExerciseConfigurations(Scanner scanner) {
         String exerciseName = "";
         ScoreAccumulator totalScore = new ScoreAccumulator();
-        while(scanner.hasNext()) {
-            String[] testClassDefinitions = scanner.nextLine().split(";");
+        Map<String, String> minimumRequirementProperties = new LinkedHashMap<>();
+        while(scanner.hasNextLine()) {
+            String line = scanner.nextLine().trim();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            if (line.contains("minimumRequirements")) {
+                parseMinimumRequirementProperty(line, minimumRequirementProperties);
+                continue;
+            }
+            String[] testClassDefinitions = line.split(";");
             for(String testClassDefinition : testClassDefinitions){
                 ParsedExerciseConfiguration parsedConfiguration =
                         parseExerciseConfiguration(testClassDefinition, exerciseName, totalScore);
@@ -67,7 +78,85 @@ public class Configuration {
                 }
             }
         }
+        applyMinimumRequirementProperties(minimumRequirementProperties);
         return totalScore.value;
+    }
+
+    private void parseMinimumRequirementProperty(String line, Map<String, String> properties) {
+        int assignment = line.indexOf('=');
+        String key = assignment < 0 ? line.trim() : line.substring(0, assignment).trim();
+        String value = assignment < 0 ? "" : line.substring(assignment + 1).trim();
+        String suffix = ".minimumRequirements";
+        if (assignment < 0 || !key.endsWith(suffix) || key.length() == suffix.length()) {
+            throw invalidMinimumRequirements(key, value, "expected Exercise.minimumRequirements = Class#testName");
+        }
+
+        String exerciseName = key.substring(0, key.length() - suffix.length()).trim();
+        if (properties.containsKey(exerciseName)) {
+            throw invalidMinimumRequirements(exerciseName, value, "property is defined more than once");
+        }
+        properties.put(exerciseName, value);
+    }
+
+    private void applyMinimumRequirementProperties(Map<String, String> properties) {
+        for (Map.Entry<String, String> property : properties.entrySet()) {
+            String exerciseName = property.getKey();
+            String value = property.getValue();
+            ExerciceConfiguration exerciseConfiguration = mapExercisesTests.get(exerciseName);
+            if (exerciseConfiguration == null) {
+                throw invalidMinimumRequirements(exerciseName, value,
+                        "exercise has no score definition");
+            }
+
+            List<MinimumRequirement> requirements = new ArrayList<>();
+            if (!value.isEmpty()) {
+                String[] items = value.split(",", -1);
+                for (String item : items) {
+                    String requirementText = item.trim();
+                    int separator = requirementText.indexOf('#');
+                    if (separator <= 0 || separator != requirementText.lastIndexOf('#')
+                            || separator == requirementText.length() - 1) {
+                        throw invalidMinimumRequirements(exerciseName, value,
+                                "each test must use Class#testName");
+                    }
+
+                    String testClass = requirementText.substring(0, separator).trim();
+                    String testName = requirementText.substring(separator + 1).trim();
+                    if (testClass.isEmpty() || testName.isEmpty()) {
+                        throw invalidMinimumRequirements(exerciseName, value,
+                                "each test must include a class and test name");
+                    }
+                    if (!isScoredTest(exerciseConfiguration, testClass, testName)) {
+                        throw invalidMinimumRequirements(exerciseName, value,
+                                "test '" + requirementText
+                                        + "' is not present in this exercise's score definition");
+                    }
+                    requirements.add(new MinimumRequirement(testClass, testName));
+                }
+            }
+            exerciseConfiguration.setMinimumRequirements(requirements);
+        }
+    }
+
+    private boolean isScoredTest(ExerciceConfiguration exerciseConfiguration,
+                                 String testClass, String testName) {
+        if (exerciseConfiguration.getListTestNote() == null) {
+            return false;
+        }
+        for (TestNote testNote : exerciseConfiguration.getListTestNote()) {
+            if (testClass.equals(testNote.getTestName())
+                    && testNote.getMethodsNote() != null
+                    && testNote.getMethodsNote().containsKey(testName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private IllegalArgumentException invalidMinimumRequirements(String exerciseName,
+                                                                 String value, String reason) {
+        return new IllegalArgumentException("Invalid minimumRequirements for exercise "
+                + exerciseName + " with value '" + value + "': " + reason);
     }
 
     private ParsedExerciseConfiguration parseExerciseConfiguration(String testClassDefinition,
