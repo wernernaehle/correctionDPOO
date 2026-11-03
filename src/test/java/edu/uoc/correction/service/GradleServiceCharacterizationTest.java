@@ -156,6 +156,49 @@ class GradleServiceCharacterizationTest {
     }
 
     @Test
+    void continuesToNextExerciseWhenTestTaskReturnsFailure(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Path studentsDirectory = temporaryDirectory.resolve("students");
+        Path testsDirectory = temporaryDirectory.resolve("tests");
+        Path firstExercise = studentsDirectory.resolve("student_01/PAC2Ex1");
+        Path secondExercise = studentsDirectory.resolve("student_01/PAC2Ex2");
+        Path commandLog = temporaryDirectory.resolve("commands.log");
+        Path wrapper = temporaryDirectory.resolve("gradlew");
+
+        for (Path exercise : new Path[]{firstExercise, secondExercise}) {
+            Files.createDirectories(exercise.resolve("src/main/java/edu/uoc/pac2"));
+            Files.createDirectories(testsDirectory.resolve(exercise.getFileName()));
+            Files.write(exercise.resolve("build.gradle"), new byte[0]);
+            Files.write(exercise.resolve("src/main/java/edu/uoc/pac2/StudentCode.java"), new byte[0]);
+        }
+        Files.write(wrapper, ("#!/bin/sh\nprintf '%s\\n' \"$@\" >> \""
+                + commandLog + "\"\n"
+                + "last=\nfor argument do last=\"$argument\"; done\n"
+                + "if [ \"$last\" = \"test\" ]; then exit 1; fi\n")
+                .getBytes(StandardCharsets.UTF_8));
+        assertTrue(wrapper.toFile().setExecutable(true));
+
+        Configuration configuration = new Configuration();
+        configuration.setDirectoryStudentsPACs(studentsDirectory.toString());
+        configuration.setDirectoryTestsPACs(testsDirectory.toString());
+        configuration.setName("PAC2");
+
+        String originalUserDirectory = System.getProperty("user.dir");
+        String originalWrapperExecutable = GradleService.GRADLEW_EXECUTABLE;
+        try {
+            System.setProperty("user.dir", temporaryDirectory.toString());
+            new GradleService(configuration).run();
+        } finally {
+            System.setProperty("user.dir", originalUserDirectory);
+            GradleService.GRADLEW_EXECUTABLE = originalWrapperExecutable;
+        }
+
+        String commands = new String(Files.readAllBytes(commandLog), StandardCharsets.UTF_8);
+        assertEquals(2, commands.lines().filter("clean"::equals).count());
+        assertEquals(2, commands.lines().filter("test"::equals).count());
+    }
+
+    @Test
     void reportsMissingStudentDirectoryWithoutNullPointerException(@TempDir Path temporaryDirectory) {
         Configuration configuration = new Configuration();
         Path missingStudentsDirectory = temporaryDirectory.resolve("missing-students");

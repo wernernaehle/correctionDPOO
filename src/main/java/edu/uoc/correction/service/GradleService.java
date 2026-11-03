@@ -40,7 +40,7 @@ public class GradleService {
         FileUtils.copyDirectory(srcDir, destDir);
     }
 
-    private void executeGradleCommand(String... command) throws IOException {
+    private void executeGradleCommand(boolean continueAfterTestFailure, String... command) throws IOException {
         long startTime = System.currentTimeMillis();
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
@@ -65,7 +65,9 @@ public class GradleService {
         long endTime = System.currentTimeMillis();
         System.out.println(" Duration: " + (double) ((endTime - startTime)/1000) +" seconds");
         process.destroy();
-        if (exitCode != 0) {
+        if (exitCode == 1 && continueAfterTestFailure) {
+            LOGGER.info("Some tests failed; continuing with correction.");
+        } else if (exitCode != 0) {
             throw new IOException("Gradle command failed with exit code " + exitCode
                     + ": " + String.join(" ", command));
         }
@@ -127,7 +129,7 @@ public class GradleService {
             //Gradle clean
             String buildFile = exercise.getAbsolutePath()+"/build.gradle";
             System.out.print("\tExecuting gradle CLEAN: ");
-            executeGradleCommand(GRADLEW_EXECUTABLE, "-b", buildFile, "clean");
+            executeGradleCommand(false, GRADLEW_EXECUTABLE, "-b", buildFile, "clean");
 
             //check is package not void (Windows problem)
             File dirPackage = new File(exercise.getAbsolutePath()+"/src/main/java/edu/uoc/"+configuration.getName().toLowerCase());
@@ -137,7 +139,7 @@ public class GradleService {
                 System.out.print("\tExecuting gradle  TEST: ");
                 String listenerScript = Paths.get(System.getProperty("user.dir"),
                         "src/main/resources/gradle-test-listener.init.gradle").toString();
-                executeGradleCommand(GRADLEW_EXECUTABLE, "-I", listenerScript,
+                executeGradleCommand(true, GRADLEW_EXECUTABLE, "-I", listenerScript,
                         "-b", buildFile, "test");
             } else if (packageFiles == null) {
                 LOGGER.warning("Could not list source package directory: " + dirPackage.getAbsolutePath());
