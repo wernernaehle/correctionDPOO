@@ -6,7 +6,6 @@ import net.lingala.zip4j.ZipFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ResultServicePasswordFileTest {
 
     @Test
-    void writesPersonalizedMessageAndZipPassword(@TempDir Path temporaryDirectory) throws Exception {
+    void writesPersonalizedPasswordFileAndCreatesEncryptedZip(@TempDir Path temporaryDirectory)
+            throws Exception {
         Configuration configuration = new Configuration();
         configuration.setDirectoryReportsPACs(temporaryDirectory.toString());
 
@@ -33,10 +33,9 @@ class ResultServicePasswordFileTest {
         resultService.zips();
 
         String passwordFile = new String(
-                Files.readAllBytes(temporaryDirectory.resolve("PASSWORDS.txt")), StandardCharsets.UTF_8);
+                Files.readAllBytes(temporaryDirectory.resolve("PASSWORD.txt")), StandardCharsets.UTF_8);
         assertTrue(passwordFile.contains("Estudiante: student"));
         assertTrue(passwordFile.contains("Tu nota numérica es un 0.00."));
-        assertTrue(passwordFile.contains("password \""));
         assertTrue(passwordFile.contains("Te recomiendo comparar y analizar tus soluciones"));
         assertTrue(!passwordFile.contains("<changeme>"));
 

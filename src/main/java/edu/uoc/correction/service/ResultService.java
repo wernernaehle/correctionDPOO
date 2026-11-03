@@ -1,40 +1,43 @@
 package edu.uoc.correction.service;
 
-import edu.uoc.correction.model.*;
-import net.lingala.zip4j.ZipFile;
-import net.lingala.zip4j.exception.ZipException;
-import net.lingala.zip4j.model.ZipParameters;
-import net.lingala.zip4j.model.enums.CompressionLevel;
-import net.lingala.zip4j.model.enums.EncryptionMethod;
+import edu.uoc.correction.model.Configuration;
+import edu.uoc.correction.model.ExerciceConfiguration;
+import edu.uoc.correction.model.Exercise;
+import edu.uoc.correction.model.Student;
+import edu.uoc.correction.model.TestNote;
+import edu.uoc.correction.model.Testsuite;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.velocity.Template;
-import org.apache.velocity.VelocityContext;
-import org.apache.velocity.app.VelocityEngine;
-import org.apache.velocity.tools.generic.MathTool;
 
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Unmarshaller;
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.*;
-import java.util.function.Predicate;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 public class ResultService {
 
     private static final String DIRECTORY_TEST_RESULTS_XML = "/build/test-results/test/";
-    Configuration configuration;
-    private final Map<String, Double> studentScores = new HashMap<>();
+    private static final Logger LOGGER = Logger.getLogger(ResultService.class.getName());
+    private final Configuration configuration;
+    private final HtmlReportService htmlReportService;
+    private final ReportArchiveService reportArchiveService;
+    private Map<String, Double> studentScores;
 
     public ResultService(Configuration configuration){
         this.configuration = configuration;
+        this.htmlReportService = new HtmlReportService(configuration);
+        this.reportArchiveService = new ReportArchiveService(configuration);
     }
 
     public List<Student> parseXmlTests() {
@@ -44,320 +47,192 @@ public class ResultService {
         List<Student> students = new ArrayList<>();
 
         File folder = new File(configuration.getDirectoryStudentsPACs());
-        File[] filesSorted = Arrays.stream(folder.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
-        //File[] filesSorted = folder.listFiles();
-        assert filesSorted != null;
-        Arrays.sort(filesSorted);
+        File[] studentDirectories = folder.listFiles(File::isDirectory);
+        if (studentDirectories == null) {
+            throw new IllegalStateException("Could not list student directory: " + folder.getAbsolutePath());
+        }
+        studentDirectories = Arrays.stream(studentDirectories)
+                .filter(studentDirectory -> !studentDirectory.isHidden())
+                .toArray(File[]::new);
+        Arrays.sort(studentDirectories);
 
-        for (File file : filesSorted) {
-            String studentName= file.getName();
-            Student student = new Student();
-            student.setName(studentName);
-
-            //create student directory
-            File dirResultStudent = new File(configuration.getDirectoryReportsPACs() +"/"+ studentName);
-            dirResultStudent.mkdir();
-
-            //TODO maybe performance problem
-            //File[] listExercisesDirectory = file.listFiles();
-            File[] listExercisesDirectory = Arrays.stream(file.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
-            assert listExercisesDirectory != null;
-            Arrays.sort(listExercisesDirectory, Comparator.comparing(File::getName));
-
-            List<Exercise> listExercises = new ArrayList<>();
-
-            for (File exerciseCurrent : listExercisesDirectory) {
-                Exercise exercise =  new Exercise();
-                exercise.setName(exerciseCurrent.getName());
-                List<File> xmlFiles = new ArrayList<>();
-                File projectDirectory = new File(exerciseCurrent.getAbsolutePath());
-                if(projectDirectory.exists()){
-
-                    File srcDir = new File(exerciseCurrent.getAbsolutePath() + "/build/reports/tests/test");
-                    File destDir = new File(configuration.getDirectoryReportsPACs() +"/"+ studentName +"/"+ exercise.getName());
-
-                    exercise.setReportUrl("./" + exercise.getName() + "/index.html");
-                    try {
-                        FileUtils.copyDirectory(srcDir, destDir);
-                    } catch (IOException e) {
-                        //exercise.setComment("Exercise Not compile or NP");
-                        listExercises.add(exercise);
-                        //break;
-
-                    }
-
-                    File folderXmlFiles = new File(exerciseCurrent.getAbsolutePath() + DIRECTORY_TEST_RESULTS_XML);
-
-                    if(folderXmlFiles.exists()){
-                        for (File xmlFile : Objects.requireNonNull(folderXmlFiles.listFiles())) {
-                            if (!xmlFile.isDirectory() && xmlFile.getName().endsWith(".xml")) {
-                                xmlFiles.add(xmlFile);
-                                //System.out.println(xmlFile.getName());
-                            }
-                        }
-                        File invocationResultsFile = new File(exerciseCurrent.getAbsolutePath()
-                                + "/build/test-results/correction-methods/test.tsv");
-                        List<ParameterizedTestAggregator.InvocationResult> invocationResults =
-                                readInvocationResults(invocationResultsFile);
-                        List<Testsuite> listTestsuite = this.parserTestSuite(
-                                exerciseCurrent.getName(), xmlFiles, invocationResults);
-                        warnForMissingTestClasses(exerciseCurrent.getName(), listTestsuite);
-                        exercise.setTestsuiteList(listTestsuite);
-                        listExercises.add(exercise);
-                    }else{
-                        //Not exist test directory, however, the exercise no compile
-                        student.setComment("Compile ERROR");
-                    }
-                }else{
-                    //Not exist project directory, however, the exercise is not present
-                    student.setComment("Exercise NP");
-                }
-            }
-
-            student.setExercises(listExercises);
-            students.add(student);
-
-
+        for (File studentDirectory : studentDirectories) {
+            students.add(parseStudent(studentDirectory));
         }
         System.out.println("OK");
         return students;
     }
 
-    private List<Testsuite> parserTestSuite(String exerciseName, List<File> xmlFiles,
-                                            List<ParameterizedTestAggregator.InvocationResult> invocationResults){
-        JAXBContext jaxbContext;
+    private Student parseStudent(File studentDirectory) {
+        String studentName= studentDirectory.getName();
+        Student student = new Student();
+        student.setName(studentName);
 
-        List<Testsuite> listTestsuite = new ArrayList<>();
-        for(File xmlFile: xmlFiles){
+        //create student directory
+        File dirResultStudent = new File(configuration.getDirectoryReportsPACs() +"/"+ studentName);
+        if (!dirResultStudent.mkdirs() && !dirResultStudent.isDirectory()) {
+            throw new IllegalStateException("Could not create student report directory: "
+                    + dirResultStudent.getAbsolutePath());
+        }
+
+        File[] exerciseDirectories = studentDirectory.listFiles(
+                file -> file.isDirectory() && !file.isHidden());
+        if (exerciseDirectories == null) {
+            throw new IllegalStateException("Could not list exercises for student: "
+                    + studentDirectory.getAbsolutePath());
+        }
+        Arrays.sort(exerciseDirectories, Comparator.comparing(File::getName));
+
+        List<Exercise> exercises = new ArrayList<>();
+
+        for (File exerciseDirectory : exerciseDirectories) {
+            parseExercise(exerciseDirectory, studentName, student, exercises);
+        }
+
+        student.setExercises(exercises);
+        return student;
+    }
+
+    private void parseExercise(File exerciseDirectory, String studentName, Student student,
+                               List<Exercise> exercises) {
+        Exercise exercise =  new Exercise();
+        exercise.setName(exerciseDirectory.getName());
+        List<File> testResultFiles = new ArrayList<>();
+        File projectDirectory = new File(exerciseDirectory.getAbsolutePath());
+        if(projectDirectory.exists()){
+
+            File srcDir = new File(exerciseDirectory.getAbsolutePath() + "/build/reports/tests/test");
+            File destDir = new File(configuration.getDirectoryReportsPACs() +"/"+ studentName +"/"+ exercise.getName());
+
+            exercise.setReportUrl("./" + exercise.getName() + "/index.html");
+            boolean reportCopyFailed = false;
             try {
-                jaxbContext = JAXBContext.newInstance(Testsuite.class);
-                Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
-                Testsuite testsuite = (Testsuite) jaxbUnmarshaller.unmarshal(xmlFile);
-                //System.out.println(testsuite);
+                FileUtils.copyDirectory(srcDir, destDir);
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING, "Could not copy test report from " + srcDir.getAbsolutePath(), e);
+                reportCopyFailed = true;
+            }
 
-                //search exercise name in hashmap, and test name in list (loop)
-                //List<TestNote> listTestNote = configuration.getMapExercisesTests().get(exerciseName);
-                ExerciceConfiguration exerciceConfiguration = configuration.getMapExercisesTests().get(exerciseName);
-                if (exerciceConfiguration != null) {
-                    for(TestNote current: exerciceConfiguration.getListTestNote()){
-                        String testsuiteClassName = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
-                        if(testsuiteClassName.equals(current.getTestName())){
-                            testsuite.setScore(current.getScore());
-                            break;
-                        }
+            File folderXmlFiles = new File(exerciseDirectory.getAbsolutePath() + DIRECTORY_TEST_RESULTS_XML);
+
+            if(folderXmlFiles.exists()){
+                File[] xmlFiles = folderXmlFiles.listFiles();
+                if (xmlFiles == null) {
+                    throw new IllegalStateException("Could not list test results in "
+                            + folderXmlFiles.getAbsolutePath());
+                }
+                for (File xmlFile : xmlFiles) {
+                    if (!xmlFile.isDirectory() && xmlFile.getName().endsWith(".xml")) {
+                        testResultFiles.add(xmlFile);
                     }
                 }
-                ParameterizedTestAggregator.AggregationResult aggregationResult =
-                        new ParameterizedTestAggregator().aggregate(
-                                testsuite, invocationResults, exerciceConfiguration);
-                for (String warning : aggregationResult.getWarnings()) {
-                    System.out.println("[WARNING] " + warning);
+                File invocationResultsFile = new File(exerciseDirectory,
+                        "build/test-results/correction-methods/test.tsv");
+                List<ParameterizedTestAggregator.InvocationResult> invocationResults =
+                        new ParameterizedTestAggregator().readInvocationResults(invocationResultsFile);
+                List<Testsuite> testSuites = this.parseTestSuites(
+                        exerciseDirectory.getName(), testResultFiles, invocationResults);
+                exercise.setTestsuiteList(testSuites);
+                exercises.add(exercise);
+            }else{
+                student.setComment("Compile ERROR");
+                if (reportCopyFailed) {
+                    exercises.add(exercise);
                 }
-                listTestsuite.add(testsuite);
+            }
+        }else{
+            student.setComment("Exercise NP");
+        }
+    }
+
+    private List<Testsuite> parseTestSuites(String exerciseName, List<File> testResultFiles,
+                                            List<ParameterizedTestAggregator.InvocationResult> invocationResults){
+        List<Testsuite> testSuites = new ArrayList<>();
+        ExerciceConfiguration exerciceConfiguration = configuration.getMapExercisesTests().get(exerciseName);
+        if (exerciceConfiguration == null || exerciceConfiguration.getListTestNote() == null) {
+            throw new IllegalStateException("No test score configuration found for exercise " + exerciseName);
+        }
+        warnForIncorrectConfiguredTotals(exerciceConfiguration, exerciseName);
+        ParameterizedTestAggregator aggregator = new ParameterizedTestAggregator();
+        for(File xmlFile: testResultFiles){
+            try {
+                JAXBContext jaxbContext = JAXBContext.newInstance(Testsuite.class);
+                Unmarshaller jaxbUnmarshaller = jaxbContext.createUnmarshaller();
+                Testsuite testSuite = (Testsuite) jaxbUnmarshaller.unmarshal(xmlFile);
+                for(TestNote current: exerciceConfiguration.getListTestNote()){
+                    if(testSuite.getName().endsWith("." + current.getTestName())
+                            || testSuite.getName().equals(current.getTestName())){
+                        testSuite.setScore(current.getScore());
+                        break;
+                    }
+                }
+                for (String warning : aggregator.aggregate(
+                        testSuite, invocationResults, exerciceConfiguration)) {
+                    LOGGER.warning(warning);
+                }
+                testSuites.add(testSuite);
 
             } catch (JAXBException e) {
-                e.printStackTrace();
+                LOGGER.log(Level.SEVERE, "Could not parse test result file: " + xmlFile.getAbsolutePath(), e);
             }
         }
-        return listTestsuite;
+        warnForMissingTestClasses(exerciseName, exerciceConfiguration, testSuites);
+        return testSuites;
     }
 
-    private List<ParameterizedTestAggregator.InvocationResult> readInvocationResults(File file) {
-        try {
-            return new ParameterizedTestAggregator().readInvocationResults(file);
-        } catch (IOException e) {
-            System.out.println("[WARNING] Could not read grouped test results from "
-                    + file.getAbsolutePath() + ": " + e.getMessage());
-            return Collections.emptyList();
-        }
-    }
-
-    private void warnForMissingTestClasses(String exerciseName, List<Testsuite> testsuites) {
-        ExerciceConfiguration exerciceConfiguration =
-                configuration.getMapExercisesTests().get(exerciseName);
-        if (exerciceConfiguration == null) {
+    private void warnForIncorrectConfiguredTotals(ExerciceConfiguration exerciceConfiguration,
+                                                   String exerciseName) {
+        if (!exerciceConfiguration.isScoreByMethods()) {
             return;
         }
-
         for (TestNote testNote : exerciceConfiguration.getListTestNote()) {
-            boolean classFound = false;
-            for (Testsuite testsuite : testsuites) {
-                String className = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
-                if (className.equals(testNote.getTestName())) {
-                    classFound = true;
+            if (testNote.getMethodsNote() == null || testNote.getMethodsNote().isEmpty()) {
+                continue;
+            }
+            double methodScoreTotal = 0;
+            for (Double methodScore : testNote.getMethodsNote().values()) {
+                if (methodScore != null) {
+                    methodScoreTotal += methodScore;
+                }
+            }
+            if (!Double.isFinite(methodScoreTotal) || !Double.isFinite(testNote.getScore())
+                    || Math.abs(methodScoreTotal - testNote.getScore()) > 0.0001) {
+                LOGGER.warning("WARN: Method scores for " + testNote.getTestName() + " in "
+                        + exerciseName + " total " + methodScoreTotal
+                        + ", but the declared class total is " + testNote.getScore());
+            }
+        }
+    }
+
+    private void warnForMissingTestClasses(String exerciseName,
+                                           ExerciceConfiguration exerciceConfiguration,
+                                           List<Testsuite> testSuites) {
+        for (TestNote testNote : exerciceConfiguration.getListTestNote()) {
+            if (testNote.getMethodsNote() == null || testNote.getMethodsNote().isEmpty()) {
+                continue;
+            }
+            boolean classExecuted = false;
+            for (Testsuite testSuite : testSuites) {
+                if (testSuite.getName().endsWith("." + testNote.getTestName())
+                        || testSuite.getName().equals(testNote.getTestName())) {
+                    classExecuted = true;
                     break;
                 }
             }
-            if (!classFound) {
+            if (!classExecuted) {
                 for (String methodName : testNote.getMethodsNote().keySet()) {
-                    System.out.println("[WARNING] Configured test '" + testNote.getTestName() + "."
-                            + methodName + "' was not found in test results.");
+                    LOGGER.warning("WARN: '" + methodName + "' no encontrado en "
+                            + testNote.getTestName() + " (" + exerciseName + ")");
                 }
             }
         }
     }
 
     public void html(List<Student> students){
-
-        VelocityEngine velocityEngine = new VelocityEngine();
-        velocityEngine.init();
-
-        Template template = velocityEngine.getTemplate("src/main/resources/template/index.vm", "UTF-8");
-
-        VelocityContext context = new VelocityContext();
-
-        for(Student student : students){
-
-
-            List<Exercise> exercises = student.getExercises();
-            List<Double> notesExercises = new ArrayList<>();
-
-            double notePAC = 0;
-            //double scorePAC = 0;
-            for(Exercise exercise : exercises){
-                int testsTotal = 0;
-                int failuresTotal = 0;
-                int errorsTotal = 0;
-                double scoreTotal = 0;
-                double noteTotal = 0;
-
-                if(exercise.getTestsuiteList() != null){
-                    for (Testsuite testsuite : exercise.getTestsuiteList()){
-                        String testClassName = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
-                        if (configuration.getMapExercisesTests().get(exercise.getName()) != null) {
-                            boolean isScoreByMethods = configuration.getMapExercisesTests().get(exercise.getName()).isScoreByMethods();
-
-                            double noteTotalByMethod = 0;
-                            if(isScoreByMethods){
-                                for (Testcase testcase : testsuite.getTestcase()){
-                                    if(testcase.getFailure() == null){
-                                        for (TestNote testNote : configuration.getMapExercisesTests().get(exercise.getName()).getListTestNote()){
-                                            if(testNote.getTestName().equals(testClassName) && testNote.getMethodsNote().size() > 0 && testNote.getMethodsNote().containsKey(testcase.getName())){
-                                                noteTotalByMethod += testNote.getMethodsNote().get(testcase.getName());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            testsTotal = testsTotal + testsuite.getTests();
-                            failuresTotal = failuresTotal + testsuite.getFailures();
-                            errorsTotal = errorsTotal + testsuite.getErrors();
-                            scoreTotal = scoreTotal + testsuite.getScore();
-
-                            int success = ((testsuite.getTests() - testsuite.getFailures() - testsuite.getErrors()) * 100) / testsuite.getTests();
-                            double note;
-                            if(isScoreByMethods){
-                                note = noteTotalByMethod;
-                            }else{
-                                note = (testsuite.getScore() * success)/100;
-                            }
-
-                            noteTotal = noteTotal + note;
-                        }
-
-                    }
-                    notePAC = notePAC + noteTotal;
-                    notesExercises.add(noteTotal);
-                }
-            }
-
-            //System.out.println("NOTA PAC: "+notePAC);
-
-            studentScores.put(student.getName(), notePAC);
-
-            //todo fran
-            for (Map.Entry<String, ExerciceConfiguration> entry : configuration.getMapExercisesTests().entrySet()) {
-                String exerciseName = entry.getKey();
-                for(Exercise current: exercises){
-                    if(exerciseName.equals(current.getName())){
-                        break;
-                    }
-                }
-            }
-
-
-            String[] splitName = student.getName().split("_PEC_");
-
-            context.put("math", new MathTool());
-            context.put("username", splitName[0]);
-            context.put("pac", configuration.getName());
-            context.put("exercises", exercises);
-            context.put("noteExercises", notesExercises);
-            context.put("notePAC", notePAC);
-            context.put("scorePAC", configuration.getScorePAC());
-            context.put("configurationExercises", configuration.getMapExercisesTests());
-
-
-            Writer writer;
-            try {
-                writer = new FileWriter(configuration.getDirectoryReportsPACs() +"/"+ student.getName() + "/index.html");
-                template.merge(context, writer);
-                writer.flush();
-                writer.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+        studentScores = htmlReportService.generate(students);
     }
 
-    public void zips() throws IOException {
-        System.out.println(System.lineSeparator() + "############ Generate ZIP files ############");
-        File folder = new File(configuration.getDirectoryReportsPACs());
-
-        //TODO maybe performance problem
-        //File[] corrections = folder.listFiles();
-        File[] corrections = Arrays.stream(folder.listFiles()).filter(Predicate.not(File::isHidden)).toArray(File[]::new);
-        assert corrections != null;
-        Arrays.sort(corrections, Comparator.comparing(File::getName));
-
-        ZipParameters zipParameters = new ZipParameters();
-        zipParameters.setEncryptFiles(true);
-        zipParameters.setCompressionLevel(CompressionLevel.NORMAL);
-        zipParameters.setEncryptionMethod(EncryptionMethod.AES);
-        try (Writer passwordWriter = Files.newBufferedWriter(
-                Paths.get(configuration.getDirectoryReportsPACs(), "PASSWORDS.txt"),
-                StandardCharsets.UTF_8)) {
-            for (File current : corrections) {
-                if (current.isDirectory()) {
-                    String studentName = current.getName();
-                    String password = RandomStringUtils.randomAlphanumeric(10);
-                    Double note = studentScores.get(studentName);
-                    if (note == null) {
-                        System.out.println("[WARNING] Skipping report directory without a current student score: "
-                                + studentName);
-                        continue;
-                    }
-
-                    ZipFile zipFile = new ZipFile(
-                            Paths.get(configuration.getDirectoryReportsPACs(), studentName + ".zip").toFile(),
-                            password.toCharArray());
-                    try {
-                        zipFile.addFolder(current, zipParameters);
-                    } catch (ZipException e) {
-                        throw new IllegalStateException("Could not create ZIP for student " + studentName, e);
-                    }
-
-                    String[] splitName = studentName.split("_PEC_");
-                    String username = splitName[0];
-                    passwordWriter.write("Estudiante: " + username + System.lineSeparator());
-                    passwordWriter.write("Fichero: " + studentName + ".zip" + System.lineSeparator());
-                    passwordWriter.write("Password: " + password + System.lineSeparator());
-                    passwordWriter.write("Mensaje:" + System.lineSeparator());
-                    passwordWriter.write("-----" + System.lineSeparator());
-                    passwordWriter.write("Hola," + System.lineSeparator() + System.lineSeparator());
-                    passwordWriter.write("Tu nota numérica es un "
-                            + String.format(Locale.ROOT, "%.2f", note)
-                            + ". Puedes ver desglosada tus puntuaciones en la imagen adjunta. Además, te adjunto un "
-                            + "fichero .zip que contiene el informe en HTML del resultado de la ejecución de los "
-                            + "tests y la nota obtenida. Para descomprimir el informe, debes usar el password \""
-                            + password + "\"." + System.lineSeparator() + System.lineSeparator());
-                    passwordWriter.write("Te recomiendo comparar y analizar tus soluciones con las proporcionadas. "
-                            + "Esto te ayudará a seguir mejorando!!" + System.lineSeparator() + System.lineSeparator());
-                    passwordWriter.write("Un saludo" + System.lineSeparator());
-                    passwordWriter.write("-----" + System.lineSeparator() + System.lineSeparator());
-                }
-            }
-        }
+    public void zips(){
+        reportArchiveService.createArchives(studentScores);
     }
 }

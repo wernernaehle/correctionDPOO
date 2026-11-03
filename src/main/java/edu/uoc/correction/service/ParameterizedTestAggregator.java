@@ -15,166 +15,212 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class ParameterizedTestAggregator {
+final class ParameterizedTestAggregator {
 
-    public AggregationResult aggregate(Testsuite testsuite, List<InvocationResult> invocationResults,
-                                       ExerciceConfiguration configuration) {
-        String simpleClassName = testsuite.getName().substring(testsuite.getName().lastIndexOf(".") + 1);
-        List<TestNote> testNotes = new ArrayList<>();
-        if (configuration != null) {
-            for (TestNote testNote : configuration.getListTestNote()) {
-                if (simpleClassName.equals(testNote.getTestName())) {
-                    testNotes.add(testNote);
-                }
-            }
-        }
-        List<Testcase> testcases = testsuite.getTestcase() == null
-                ? new ArrayList<>()
-                : new ArrayList<>(testsuite.getTestcase());
+    private static final Logger LOGGER = Logger.getLogger(ParameterizedTestAggregator.class.getName());
 
-        List<InvocationResult> classResults = new ArrayList<>();
-        Map<String, List<InvocationResult>> groupedResults = new LinkedHashMap<>();
-        Map<String, Testcase> groupedTestcases = new LinkedHashMap<>();
-        for (InvocationResult invocation : invocationResults) {
-            if (!testsuite.getName().equals(invocation.getClassName())) {
-                continue;
-            }
-            classResults.add(invocation);
-        }
-
-        List<String> warnings = new ArrayList<>();
-        List<Testcase> remainingTestcases = testcases;
-        if (!classResults.isEmpty() && classResults.size() != testcases.size()) {
-            warnings.add("Could not align JUnit listener events with XML results for '"
-                    + testsuite.getName() + "'. Invocation grouping was skipped.");
-        } else if (classResults.size() == testcases.size()) {
-            remainingTestcases = new ArrayList<>();
-            for (int i = 0; i < testcases.size(); i++) {
-                Testcase testcase = testcases.get(i);
-                InvocationResult result = classResults.get(i);
-                if (result.getMethodName().isEmpty()) {
-                    remainingTestcases.add(testcase);
-                    continue;
-                }
-
-                String key = resolveConfiguredName(result.getMethodName(), testNotes);
-                Testcase groupedTestcase = groupedTestcases.get(key);
-                if (groupedTestcase == null) {
-                    groupedTestcase = new Testcase();
-                    groupedTestcase.setName(key);
-                    groupedTestcase.setClassname(testsuite.getName());
-                    groupedTestcase.setGrouped(true);
-                    groupedTestcases.put(key, groupedTestcase);
-                    remainingTestcases.add(groupedTestcase);
-                }
-                InvocationResult namedResult = new InvocationResult(result.getClassName(),
-                        result.getMethodName(), testcase.getName(), result.getStatus(),
-                        result.getMessage(), result.getExceptionType());
-                groupedResults.computeIfAbsent(key, ignored -> new ArrayList<>()).add(namedResult);
-            }
-        }
-
-        for (Map.Entry<String, List<InvocationResult>> entry : groupedResults.entrySet()) {
-            List<Testcase> invocations = new ArrayList<>();
-            boolean allPassed = !entry.getValue().isEmpty();
-            for (InvocationResult result : entry.getValue()) {
-                Testcase invocation = new Testcase();
-                invocation.setName(result.getInvocationName());
-                invocation.setClassname(result.getClassName());
-                if (!"SUCCESS".equals(result.getStatus())) {
-                    allPassed = false;
-                    String message = result.getMessage();
-                    if (message == null || message.trim().isEmpty()) {
-                        message = "Invocation " + result.getStatus().toLowerCase() + ".";
-                    }
-                    invocation.setFailure(new Failure(message, result.getExceptionType()));
-                }
-                invocations.add(invocation);
-            }
-
-            Testcase groupedTestcase = groupedTestcases.get(entry.getKey());
-            groupedTestcase.setInvocations(invocations);
-            if (!allPassed) {
-                groupedTestcase.setFailure(new Failure("One or more invocations did not pass.",
-                        "InvocationFailure"));
-            }
-        }
-
-        testsuite.setTestcase(remainingTestcases);
-        Set<String> actualNames = new HashSet<>();
-        for (Testcase testcase : remainingTestcases) {
-            actualNames.add(testcase.getName());
-        }
-
-        for (TestNote testNote : testNotes) {
-            for (String configuredName : testNote.getMethodsNote().keySet()) {
-                if (!actualNames.contains(configuredName)) {
-                    warnings.add("Configured test '" + testNote.getTestName() + "."
-                            + configuredName + "' was not found in test results.");
-                }
-            }
-        }
-        return new AggregationResult(warnings);
-    }
-
-    public List<InvocationResult> readInvocationResults(File file) throws IOException {
-        if (!file.isFile()) {
+    List<InvocationResult> readInvocationResults(File resultFile) {
+        if (!resultFile.isFile()) {
             return Collections.emptyList();
         }
 
         List<InvocationResult> results = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                new InputStreamReader(new FileInputStream(resultFile), StandardCharsets.UTF_8))) {
             String line;
             int lineNumber = 0;
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
                 String[] fields = line.split("\t", -1);
                 if (fields.length != 6) {
-                    throw new IOException("Invalid invocation result at line " + lineNumber + ".");
+                    throw new IOException("Invalid grouped test result at line " + lineNumber);
                 }
-                try {
-                    results.add(new InvocationResult(decode(fields[0]), decode(fields[1]),
-                            decode(fields[2]), fields[3], decode(fields[4]), decode(fields[5])));
-                } catch (IllegalArgumentException e) {
-                    throw new IOException("Invalid invocation result at line " + lineNumber + ".", e);
-                }
+                results.add(new InvocationResult(
+                        decode(fields[0]), decode(fields[1]), decode(fields[2]), fields[3],
+                        decode(fields[4]), decode(fields[5])));
             }
+        } catch (IOException | IllegalArgumentException e) {
+            LOGGER.log(Level.WARNING, "WARN: Could not read grouped test results from "
+                    + resultFile.getAbsolutePath() + "; invocation grouping will be skipped", e);
+            return Collections.emptyList();
         }
         return results;
     }
 
-    private String resolveConfiguredName(String methodName, List<TestNote> testNotes) {
+    List<String> aggregate(Testsuite testsuite, List<InvocationResult> invocationResults,
+                           ExerciceConfiguration configuration) {
+        List<TestNote> testNotes = classNotes(testsuite, configuration);
+        List<Testcase> originalTestcases = testsuite.getTestcase() == null
+                ? Collections.emptyList() : testsuite.getTestcase();
+        List<InvocationResult> classResults = new ArrayList<>();
+        for (InvocationResult result : invocationResults) {
+            if (testsuite.getName().equals(result.className)) {
+                classResults.add(result);
+            }
+        }
+
+        Map<String, Testcase> groupedTestcases = new LinkedHashMap<>();
+        Map<String, List<Testcase>> groupedInvocations = new LinkedHashMap<>();
+        Map<Testcase, String> groupByOriginalTestcase = new HashMap<>();
+        if (classResults.size() == originalTestcases.size()) {
+            for (int i = 0; i < originalTestcases.size(); i++) {
+                assignGroup(originalTestcases.get(i), classResults.get(i), testsuite,
+                        testNotes, groupedTestcases, groupedInvocations, groupByOriginalTestcase);
+            }
+        } else if (!classResults.isEmpty()) {
+            LOGGER.warning("WARN: Could not align JUnit listener events with XML results for "
+                    + testsuite.getName() + "; invocation grouping was skipped");
+            return missingConfiguredNames(originalTestcases, testNotes);
+        } else {
+            return missingConfiguredNames(originalTestcases, testNotes);
+        }
+
+        if (groupByOriginalTestcase.isEmpty()) {
+            return missingConfiguredNames(originalTestcases, testNotes);
+        }
+
+        List<Testcase> aggregatedTestcases = new ArrayList<>();
+        for (Testcase testcase : originalTestcases) {
+            String scoreName = groupByOriginalTestcase.get(testcase);
+            if (scoreName == null) {
+                aggregatedTestcases.add(testcase);
+            } else if (groupedTestcases.get(scoreName).getInvocations() == null) {
+                Testcase groupedTestcase = groupedTestcases.get(scoreName);
+                List<Testcase> invocations = groupedInvocations.get(scoreName);
+                groupedTestcase.setInvocations(invocations);
+                if (invocations.stream().anyMatch(invocation -> invocation.getFailure() != null)) {
+                    groupedTestcase.setFailure(new Failure(
+                            "One or more invocations did not pass.", "InvocationFailure"));
+                }
+                aggregatedTestcases.add(groupedTestcase);
+            }
+        }
+
+        testsuite.setTestcase(aggregatedTestcases);
+        return missingConfiguredNames(testcases(testsuite), testNotes);
+    }
+
+    private void assignGroup(Testcase testcase, InvocationResult result, Testsuite testsuite,
+                             List<TestNote> testNotes, Map<String, Testcase> groupedTestcases,
+                             Map<String, List<Testcase>> groupedInvocations,
+                             Map<Testcase, String> groupByOriginalTestcase) {
+        if (result.methodName.isEmpty()) {
+            return;
+        }
+
+        String scoreName = resolveScoreName(result.methodName, testNotes);
+        groupedTestcases.computeIfAbsent(scoreName, name -> groupedTestcase(name, testsuite.getName()));
+        groupedInvocations.computeIfAbsent(scoreName, ignored -> new ArrayList<>())
+                .add(invocationTestcase(testcase, result));
+        groupByOriginalTestcase.put(testcase, scoreName);
+    }
+
+    private List<TestNote> classNotes(Testsuite testsuite, ExerciceConfiguration configuration) {
+        if (configuration == null || configuration.getListTestNote() == null) {
+            return Collections.emptyList();
+        }
+        String className = simpleClassName(testsuite.getName());
+        List<TestNote> classNotes = new ArrayList<>();
+        for (TestNote testNote : configuration.getListTestNote()) {
+            if (className.equals(testNote.getTestName())) {
+                classNotes.add(testNote);
+            }
+        }
+        return classNotes;
+    }
+
+    private List<String> missingConfiguredNames(List<Testcase> testcases, List<TestNote> testNotes) {
+        List<String> warnings = new ArrayList<>();
+        Map<String, Boolean> executedNames = new HashMap<>();
+        for (Testcase testcase : testcases) {
+            executedNames.put(testcase.getName(), Boolean.TRUE);
+        }
         for (TestNote testNote : testNotes) {
-            if (testNote.getMethodsNote().containsKey(methodName)) {
+            if (testNote.getMethodsNote() == null) {
+                continue;
+            }
+            for (String configuredName : testNote.getMethodsNote().keySet()) {
+                if (!executedNames.containsKey(configuredName)) {
+                    String normalizedName = normalizeTypedMethodName(configuredName);
+                    if (!executedNames.containsKey(normalizedName)) {
+                        warnings.add("WARN: '" + configuredName + "' no encontrado en "
+                                + testNote.getTestName());
+                    }
+                }
+            }
+        }
+        return warnings;
+    }
+
+    private List<Testcase> testcases(Testsuite testsuite) {
+        return testsuite.getTestcase() == null ? Collections.emptyList() : testsuite.getTestcase();
+    }
+
+    private String resolveScoreName(String methodName, List<TestNote> testNotes) {
+        for (TestNote testNote : testNotes) {
+            if (testNote.getMethodsNote() != null && testNote.getMethodsNote().containsKey(methodName)) {
                 return methodName;
             }
         }
 
-        int parameterStart = methodName.indexOf('(');
-        if (parameterStart >= 0 && methodName.endsWith(")")) {
-            String defaultName = methodName.substring(0, parameterStart) + "()";
-            for (TestNote testNote : testNotes) {
-                if (testNote.getMethodsNote().containsKey(defaultName)) {
-                    return defaultName;
-                }
+        String normalizedName = normalizeTypedMethodName(methodName);
+        for (TestNote testNote : testNotes) {
+            if (testNote.getMethodsNote() != null
+                    && testNote.getMethodsNote().containsKey(normalizedName)) {
+                return normalizedName;
             }
-            return defaultName;
+        }
+        return normalizedName;
+    }
+
+    private String normalizeTypedMethodName(String methodName) {
+        int openingParenthesis = methodName.indexOf('(');
+        if (openingParenthesis > 0 && methodName.endsWith(")")) {
+            return methodName.substring(0, openingParenthesis) + "()";
         }
         return methodName;
+    }
+
+    private Testcase groupedTestcase(String name, String className) {
+        Testcase testcase = new Testcase();
+        testcase.setName(name);
+        testcase.setClassname(className);
+        testcase.setGrouped(true);
+        return testcase;
+    }
+
+    private Testcase invocationTestcase(Testcase xmlTestcase, InvocationResult result) {
+        Testcase invocation = new Testcase();
+        invocation.setName(xmlTestcase.getName());
+        invocation.setClassname(xmlTestcase.getClassname());
+        invocation.setTime(xmlTestcase.getTime());
+        invocation.setSuccessful(xmlTestcase.getSuccessful());
+        if (!"SUCCESS".equals(result.status)) {
+            String message = result.message;
+            if (message == null || message.trim().isEmpty()) {
+                message = "Invocation " + result.status.toLowerCase() + ".";
+            }
+            invocation.setFailure(new Failure(message, result.exceptionType));
+        }
+        return invocation;
+    }
+
+    private String simpleClassName(String className) {
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     private String decode(String value) {
         return new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8);
     }
 
-    public static class InvocationResult {
+    static final class InvocationResult {
         private final String className;
         private final String methodName;
         private final String invocationName;
@@ -182,50 +228,14 @@ public class ParameterizedTestAggregator {
         private final String message;
         private final String exceptionType;
 
-        public InvocationResult(String className, String methodName, String invocationName,
-                                String status, String message, String exceptionType) {
+        InvocationResult(String className, String methodName, String invocationName,
+                         String status, String message, String exceptionType) {
             this.className = className;
             this.methodName = methodName;
             this.invocationName = invocationName;
             this.status = status;
             this.message = message;
             this.exceptionType = exceptionType;
-        }
-
-        public String getClassName() {
-            return className;
-        }
-
-        public String getMethodName() {
-            return methodName;
-        }
-
-        public String getInvocationName() {
-            return invocationName;
-        }
-
-        public String getStatus() {
-            return status;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public String getExceptionType() {
-            return exceptionType;
-        }
-    }
-
-    public static class AggregationResult {
-        private final List<String> warnings;
-
-        public AggregationResult(List<String> warnings) {
-            this.warnings = warnings;
-        }
-
-        public List<String> getWarnings() {
-            return warnings;
         }
     }
 }

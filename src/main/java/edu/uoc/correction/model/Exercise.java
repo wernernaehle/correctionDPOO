@@ -3,7 +3,7 @@ package edu.uoc.correction.model;
 import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 public class Exercise {

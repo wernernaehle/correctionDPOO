@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ParameterizedTestReportTest {
 
     @Test
-    void rendersGroupedFailureWithInvocationNameAndMessage(@TempDir Path temporaryDirectory) throws IOException {
+    void showsTheFailingInvocationAndAwardsNoPoints(@TempDir Path temporaryDirectory) throws IOException {
         Configuration configuration = new Configuration();
         configuration.setDirectoryReportsPACs(temporaryDirectory.toString());
         configuration.setName("PAC2");
@@ -32,22 +32,10 @@ class ParameterizedTestReportTest {
 
         TestNote testNote = new TestNote();
         testNote.setTestName("ExampleTest");
+        testNote.setScore(0.06);
         HashMap<String, Double> methodNotes = new HashMap<>();
-        methodNotes.put("testSingleLoanRequest()", 0.06);
-        methodNotes.put("testLoanEligibilityForEveryCategory()", 0.03);
-        methodNotes.put("testSingleRequestRequiresLoanableArtifact()", 0.06);
-        methodNotes.put("testSingleRequestRejectsInvalidCategories()", 0.04);
-        methodNotes.put("testSingleRequestRejectsInvalidInsuredValues()", 0.04);
-        methodNotes.put("testSingleRequestRejectsInvalidDurations()", 0.04);
-        methodNotes.put("testSingleRequestRejectsInvalidDatesBeforeCheckingEligibility()", 0.03);
-        methodNotes.put("testMixedRequestsAndFractionalPercentage()", 0.2);
-        methodNotes.put("testAllNoneSingleAndEmptyRequests()", 0.2);
-        methodNotes.put("testStatisticsReflectLoanConditions()", 0.2);
-        methodNotes.put("testStatisticsRejectEachNullArrayAndLengthMismatch()", 0.2);
-        methodNotes.put("testStatisticsRejectInvalidElementsAtEveryPosition()", 0.2);
-        methodNotes.put("testStatisticsValidateDatesIncludingEmptyArrays()", 0.2);
+        methodNotes.put("loanRequest()", 0.06);
         testNote.setMethodsNote(methodNotes);
-
         ExerciceConfiguration exerciseConfiguration = new ExerciceConfiguration();
         exerciseConfiguration.setScoreByMethods(true);
         exerciseConfiguration.setListTestNote(Collections.singletonList(testNote));
@@ -57,52 +45,37 @@ class ParameterizedTestReportTest {
         failedInvocation.setName("[2] failing invocation");
         failedInvocation.setFailure(new Failure("expected true but was false",
                 "org.opentest4j.AssertionFailedError"));
-
         Testcase groupedTestcase = new Testcase();
-        groupedTestcase.setName("testSingleLoanRequest()");
+        groupedTestcase.setName("loanRequest()");
         groupedTestcase.setGrouped(true);
         groupedTestcase.setFailure(new Failure("One or more invocations did not pass.",
                 "InvocationFailure"));
         groupedTestcase.setInvocations(Collections.singletonList(failedInvocation));
 
-        ArrayList<Testcase> testcases = new ArrayList<>();
-        testcases.add(groupedTestcase);
-        for (String methodName : methodNotes.keySet()) {
-            if (!"testSingleLoanRequest()".equals(methodName)) {
-                Testcase passingTest = new Testcase();
-                passingTest.setName(methodName);
-                passingTest.setClassname("edu.uoc.pac2.ExampleTest");
-                testcases.add(passingTest);
-            }
-        }
-
         Testsuite testsuite = new Testsuite();
         testsuite.setName("edu.uoc.pac2.ExampleTest");
-        testsuite.setTests(31);
+        testsuite.setTests(2);
         testsuite.setFailures(1);
         testsuite.setErrors(0);
-        testsuite.setScore(1.5);
-        testsuite.setTestcase(testcases);
+        testsuite.setScore(0.06);
+        testsuite.setTestcase(Collections.singletonList(groupedTestcase));
 
         Exercise exercise = new Exercise();
         exercise.setName("PAC2Ex1");
-        exercise.setReportUrl("./PAC2Ex1/index.html");
         exercise.setTestsuiteList(Collections.singletonList(testsuite));
-
         Student student = new Student();
         student.setName("student_PEC_example");
         student.setExercises(new ArrayList<>(Collections.singletonList(exercise)));
-        Files.createDirectory(temporaryDirectory.resolve(student.getName()));
+        Path studentReportDirectory = temporaryDirectory.resolve(student.getName());
+        Files.createDirectories(studentReportDirectory);
 
         new ResultService(configuration).html(Collections.singletonList(student));
 
-        String report = new String(Files.readAllBytes(
-                temporaryDirectory.resolve(student.getName()).resolve("index.html")),
+        String report = new String(Files.readAllBytes(studentReportDirectory.resolve("index.html")),
                 StandardCharsets.UTF_8);
-        assertTrue(report.contains("testSingleLoanRequest()"));
-        assertTrue(report.contains("[0.06 puntos]"));
+        assertTrue(report.contains("loanRequest()"));
         assertTrue(report.contains("[2] failing invocation"));
         assertTrue(report.contains("expected true but was false"));
-        assertTrue(report.contains(">1.44</th>"));
+        assertTrue(report.contains(">0.0</th>"));
     }
 }

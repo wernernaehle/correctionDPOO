@@ -67,7 +67,7 @@
                     <div class="form-group row">
                         <label for="notePAC" class="col-sm-2 col-form-label">Nota</label>
                         <div class="col-sm-10">
-                            <span class="badge badge-warning" style="font-size: 25px;">$math.roundTo(2, $notePAC)</span> sobre $scorePAC
+                            <span class="badge badge-warning" style="font-size: 25px;">$math.roundTo(2, $notePAC)</span> sobre $math.roundTo(2, $scorePAC)
                         </div>
                     </div>
                     <div class="form-group row">
@@ -76,8 +76,8 @@
                             <small class="form-text text-danger">Esta nota <b>NO es la nota final</b> de la PEC. Es la evaluación correspondiente a la ejecución de los tests:</small>
                             <!--small class="form-text text-danger"><li>El ejercicio 3 sobre comentarios Javadoc, no se está evaluando con este corrector (de ahí que la nota no sea sobre 10).</li></small-->
                             <small class="form-text text-danger"><li>Puedes recibir una penalización de la nota obtenida en función de la calidad del código proporcionado, tal y como se especifica en el enunciado.</li></small>
-                            <small class="form-text text-danger">En el Registro de EC del aula tienes la <b>NOTA DEFINITIVA</b> de la PEC</small>
-                            <small class="form-text text-danger">Revisa los comentarios en tu código con el plugin Codemment</small>
+                            #*<small class="form-text text-danger">En el Registro de EC del aula tienes la <b>NOTA DEFINITIVA</b> de la PEC</small>
+                            <small class="form-text text-danger">Revisa los comentarios en tu código con el plugin Codemment</small>*#
                         </div>
                     </div>
                 </div>
@@ -130,13 +130,14 @@
 
                                 #foreach( $test in $exercise.testsuiteList )
 
+                                    #set( $scoreByMethodsForTest = $configurationExercises.get($exercise.name).isScoreByMethodsForClass($test.name) )
                                     #set( $testsTotal = $testsTotal + $test.tests)
                                     #set( $failuresTotal = $failuresTotal + $test.failures)
                                     #set( $errorsTotal = $errorsTotal + $test.errors)
                                     #set( $scoreTotal = $scoreTotal + $test.score)
                                     <tr>
                                         <th>$test.name</th>
-                                        <td>$test.score</td>
+                                        <td>$math.roundTo(2, $test.score)</td>
                                         <td>$test.tests</td>
                                         <td>$test.failures</td>
                                         #set( $success = (($test.tests - $test.failures - $test.errors) * 100) / $test.tests)
@@ -151,14 +152,14 @@
 
 
 
-                                            #if($configurationExercises.get($exercise.name).scoreByMethods)
+                                            #if($scoreByMethodsForTest)
                                                 #set( $noteTotalByMethod = 0 )
                                                 #foreach( $testcase in $test.testcase )
                                                     #if (! $testcase.failure)
 
                                                         #set( $exerciseConfiguration = $configurationExercises.get($exercise.name) )
                                                         #foreach( $testNote in $exerciseConfiguration.listTestNote )
-                                                            #if ($exerciseConfiguration.scoreByMethods)
+                                                            #if ($scoreByMethodsForTest && $test.name.endsWith(".$testNote.testName") && $testNote.methodsNote.containsKey($testcase.name))
                                                                 #set($noteTotalByMethod = $noteTotalByMethod + $math.toNumber($testNote.methodsNote.get($testcase.name)))
                                                             #end
                                                         #end
@@ -179,7 +180,7 @@
                                         </td>
                                         <td>
 
-                                            #if($configurationExercises.get($exercise.name).scoreByMethods)
+                                            #if($scoreByMethodsForTest)
                                                 <p class="small mb-1 text-info"> Se indica la puntuación obtenida si se supera el test</p>
                                             #end
 
@@ -190,32 +191,41 @@
                                                 #set( $exerciseConfiguration = $configurationExercises.get($exercise.name) )
                                                 #foreach( $testNote in $exerciseConfiguration.listTestNote )
                                                     #*if ($testNote.methodsNote != {})*#
-                                                    #if ($exerciseConfiguration.scoreByMethods)
+                                                    #if ($scoreByMethodsForTest && $test.name.endsWith(".$testNote.testName") && $testNote.methodsNote.containsKey($testcase.name))
                                                         <span class="text-info"> [$testNote.methodsNote.get($testcase.name) puntos] </span>
                                                     #end
                                                 #end
-                                                #if (! $testcase.failure)
-                                                    <span class="text-success">: Test superado correctamente.</span>
+                                                #if ($testcase.grouped)
+                                                    #if (! $testcase.failure)
+                                                        <span class="text-success">: Test superado correctamente.</span>
+                                                    #else
+                                                        #foreach( $invocation in $testcase.invocations )
+                                                            #if ($invocation.failure)
+                                                                <span class="text-danger"> <b>[ERROR]</b> $invocation.name: $invocation.failure.message.replaceAll("<", "&lt;").replaceAll(">", "&gt;") </span>
+                                                            #end
+                                                        #end
+                                                    #end
                                                 #else
-
-                                                    #set ($splitOne = $testcase.failure.message.split($testcase.failure.type))
-
-                                                    #*
-                                                    #if ($splitOne[1].contains("==>"))
-                                                        #set ($msg = $splitOne[1].split("==>"))
-                                                        <span class="text-danger"> $msg[0] </span>
+                                                    #if (! $testcase.failure)
+                                                        <span class="text-success">: Test superado correctamente.</span>
                                                     #else
-                                                        <span class="text-danger"> $splitOne[1].replaceAll("<", "&lt;").replaceAll(">", "&gt;") </span>
+                                                        #set ($splitOne = $testcase.failure.message.split($testcase.failure.type))
+
+                                                        #*
+                                                        #if ($splitOne[1].contains("==>"))
+                                                            #set ($msg = $splitOne[1].split("==>"))
+                                                            <span class="text-danger"> $msg[0] </span>
+                                                        #else
+                                                            <span class="text-danger"> $splitOne[1].replaceAll("<", "&lt;").replaceAll(">", "&gt;") </span>
+                                                        #end
+                                                        *#
+
+                                                        #if ($splitOne.size() >= 2)
+                                                            <span class="text-danger"> <b>[ERROR]</b> $splitOne[1].replaceAll("<", "&lt;").replaceAll(">", "&gt;") </span>
+                                                        #else
+                                                            <span class="text-danger"> <b>[ERROR]</b> $splitOne </span>
+                                                        #end
                                                     #end
-                                                    *#
-
-                                                    #if ($splitOne.size() >= 2)
-                                                        <span class="text-danger"> <b>[ERROR]</b> $splitOne[1].replaceAll("<", "&lt;").replaceAll(">", "&gt;") </span>
-                                                    #else
-                                                        <span class="text-danger"> <b>[ERROR]</b> $splitOne </span>
-                                                    #end
-
-
                                                 #end
 
                                                 </p>
@@ -231,7 +241,7 @@
                                     #set( $successfulTotal = (($testsTotal - $failuresTotal - $errorsTotal) * 100) / $testsTotal)
                                     <tr class="table-primary">
                                         <th scope="col">TOTAL</th>
-                                        <th scope="col">$scoreTotal</th>
+                                        <th scope="col">$math.roundTo(2, $scoreTotal)</th>
                                         <th scope="col">$testsTotal</th>
                                         <th scope="col">$failuresTotal</th>
                                         <th scope="col">$successfulTotal %</th>

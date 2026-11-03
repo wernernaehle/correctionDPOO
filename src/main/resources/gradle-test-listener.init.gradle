@@ -14,7 +14,7 @@ allprojects {
                 resultFile.parentFile.mkdirs()
                 resultFile.text = ""
             } catch (IOException e) {
-                System.err.println("[WARNING] Could not initialize grouped test results: " + e.message)
+                System.err.println("WARN: Could not initialize grouped test results: " + e.message)
             }
         }
 
@@ -27,20 +27,21 @@ allprojects {
 
             void afterTest(TestDescriptor descriptor, TestResult result) {
                 TestDescriptor methodDescriptor = descriptor.parent
-                while (methodDescriptor != null) {
-                    boolean methodParent = methodDescriptor.name != descriptor.className
-                            && methodDescriptor.parent != null
-                            && methodDescriptor.parent.name == descriptor.className
-                    if (methodParent) {
-                        break
-                    }
+                while (methodDescriptor != null && methodDescriptor.parent != null
+                        && methodDescriptor.parent.name != descriptor.className) {
                     methodDescriptor = methodDescriptor.parent
                 }
+                String methodName = ""
+                if (methodDescriptor != null && methodDescriptor.parent != null
+                        && methodDescriptor.parent.name == descriptor.className) {
+                    methodName = methodDescriptor.name ?: ""
+                }
+
                 String exceptionTypes = result.exceptions.collect { it.class.name }.join("\n")
                 String messages = result.exceptions.collect { it.message ?: "" }.join("\n")
                 String row = [
                         encode(descriptor.className ?: ""),
-                        encode(methodDescriptor == null ? "" : (methodDescriptor.name ?: "")),
+                        encode(methodName),
                         encode(descriptor.name ?: ""),
                         result.resultType.name(),
                         encode(messages),
@@ -51,7 +52,7 @@ allprojects {
                     try {
                         resultFile.withWriterAppend("UTF-8") { writer -> writer.write(row) }
                     } catch (IOException e) {
-                        System.err.println("[WARNING] Could not write grouped test results: " + e.message)
+                        System.err.println("WARN: Could not write grouped test results: " + e.message)
                     }
                 }
             }

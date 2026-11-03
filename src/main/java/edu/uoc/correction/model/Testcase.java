@@ -5,7 +5,7 @@ import java.io.Serializable;
 import java.util.List;
 
 /**
- * @author Fran Manez
+ * @author Werner Nähle
  * @version 1.0
  */
 @XmlRootElement(name = "testcase")
