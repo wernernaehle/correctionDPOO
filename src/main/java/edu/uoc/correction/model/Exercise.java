@@ -1,5 +1,6 @@
 package edu.uoc.correction.model;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +12,7 @@ public class Exercise {
     private List<Testsuite> testsuiteList;
     private String reportUrl;
     private String comment;
+    private List<MinimumRequirement> failedMinimumRequirements = new ArrayList<>();
 
     public String getName() {
         return name;
@@ -44,4 +46,16 @@ public class Exercise {
         this.comment = comment;
     }
 
+    public List<MinimumRequirement> getFailedMinimumRequirements() {
+        return failedMinimumRequirements;
+    }
+
+    public void setFailedMinimumRequirements(List<MinimumRequirement> failedMinimumRequirements) {
+        this.failedMinimumRequirements = failedMinimumRequirements == null
+                ? new ArrayList<>() : failedMinimumRequirements;
+    }
+
+    public boolean isMinimumRequirementsFailed() {
+        return !failedMinimumRequirements.isEmpty();
+    }
 }

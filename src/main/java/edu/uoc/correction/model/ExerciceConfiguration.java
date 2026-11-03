@@ -1,6 +1,7 @@
 package edu.uoc.correction.model;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * @author Werner Nähle
@@ -9,6 +10,7 @@ import java.util.List;
 public class ExerciceConfiguration {
     private List<TestNote> listTestNote;
     private boolean scoreByMethods = false;
+    private List<MinimumRequirement> minimumRequirements = new ArrayList<>();
 
     public List<TestNote> getListTestNote() {
         return listTestNote;
@@ -39,5 +41,14 @@ public class ExerciceConfiguration {
             }
         }
         return false;
+    }
+
+    public List<MinimumRequirement> getMinimumRequirements() {
+        return minimumRequirements;
+    }
+
+    public void setMinimumRequirements(List<MinimumRequirement> minimumRequirements) {
+        this.minimumRequirements = minimumRequirements == null
+                ? new ArrayList<>() : minimumRequirements;
     }
 }

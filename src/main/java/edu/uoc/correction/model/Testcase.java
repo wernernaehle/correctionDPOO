@@ -24,6 +24,9 @@ public class Testcase implements Serializable {
 
     private Failure failure;
 
+    @XmlElement(name = "skipped")
+    private Failure skipped;
+
     @XmlTransient
     private boolean grouped;
 
@@ -68,6 +71,14 @@ public class Testcase implements Serializable {
 
     public void setFailure(Failure failure) {
         this.failure = failure;
+    }
+
+    public boolean isSkipped() {
+        return skipped != null;
+    }
+
+    public void setSkipped(Failure skipped) {
+        this.skipped = skipped;
     }
 
     public boolean isGrouped() {

@@ -40,9 +40,11 @@ class ResultServiceCharacterizationTest {
         Files.write(exerciseDirectory.resolve(".DS_Store"), new byte[0]);
         Files.write(sourceReport, "<html>report</html>".getBytes(StandardCharsets.UTF_8));
         Files.write(testResultsDirectory.resolve("TEST-example.xml"),
-                ("<testsuite name=\"edu.uoc.pac2.ExampleTest\" tests=\"1\" skipped=\"0\" "
+                ("<testsuite name=\"edu.uoc.pac2.ExampleTest\" tests=\"2\" skipped=\"1\" "
                         + "failures=\"0\" errors=\"0\" timestamp=\"2024-01-01T00:00:00\" time=\"0\">"
                         + "<testcase name=\"passes\" classname=\"edu.uoc.pac2.ExampleTest\" time=\"0\"/>"
+                        + "<testcase name=\"isSkipped\" classname=\"edu.uoc.pac2.ExampleTest\" time=\"0\">"
+                        + "<skipped message=\"disabled\"/></testcase>"
                         + "</testsuite>").getBytes(StandardCharsets.UTF_8));
 
         Configuration configuration = new Configuration();
@@ -73,6 +75,8 @@ class ResultServiceCharacterizationTest {
         assertEquals(1, students.get(0).getExercises().size());
         assertNull(students.get(0).getComment());
         assertEquals(1.0, students.get(0).getExercises().get(0).getTestsuiteList().get(0).getScore());
+        assertTrue(students.get(0).getExercises().get(0).getTestsuiteList().get(0)
+                .getTestcase().get(1).isSkipped());
         assertTrue(Files.exists(reportsDirectory.resolve(
                 "student_PEC_example/PAC2Ex1/index.html")));
         assertEquals("<html>report</html>", new String(Files.readAllBytes(
