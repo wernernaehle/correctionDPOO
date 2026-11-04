@@ -100,13 +100,11 @@ final class ReportArchiveService {
                 + "-----" + lineSeparator
                 + "Hola," + lineSeparator + lineSeparator
                 + "Tu nota numérica es un " + String.format(Locale.ROOT, "%.2f", score)
-                + ". Puedes ver desglosada tus puntuaciones en la imagen adjunta. Además, te adjunto un "
-                + "fichero .zip que contiene el informe en HTML del resultado de la ejecución de los "
-                + "tests y la nota obtenida. Para descomprimir el informe, debes usar el password \""
-                + password + "\"." + lineSeparator + lineSeparator
+                + ". Te adjunto un fichero .zip que contiene el informe en HTML del resultado de la "
+                + "ejecución de los tests, calidad y la nota obtenida. Para descomprimir el informe, "
+                + "debes usar el password \"" + password + "\"." + lineSeparator + lineSeparator
                 + "Te recomiendo comparar y analizar tus soluciones con las proporcionadas. "
                 + "Esto te ayudará a seguir mejorando!!" + lineSeparator + lineSeparator
-                + "Un saludo" + lineSeparator
                 + "-----" + lineSeparator + lineSeparator);
     }
 }

@@ -86,6 +86,9 @@ class QualityScoreCalculationTest {
         String report = Files.readString(studentDirectory.resolve("index.html"));
         assertTrue(report.contains("Calidad del código"));
         assertTrue(report.contains("javaIdioms"));
+        assertTrue(report.contains("Detalle de incumplimientos por categoría"));
+        assertTrue(report.contains("<h6 class=\"mt-3\">javaIdioms</h6>"));
+        assertTrue(report.contains("Uso de patrones y características de Java de forma clara y adecuada."));
         assertTrue(report.contains("STRING_REFERENCE_COMPARISON"));
         assertTrue(report.contains("Sample.java:1"));
     }
