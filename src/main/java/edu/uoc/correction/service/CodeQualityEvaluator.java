@@ -183,7 +183,8 @@ public final class CodeQualityEvaluator {
             double weight = quality.getWeights().getOrDefault(category, 0.0);
             double rawPenalty = quality.getMaxPenalty() * (weight / weightTotal)
                     * Math.min(1.0, count / (double) quality.getViolationsForFullCategoryPenalty());
-            categories.add(new QualityCategoryResult(category.getKey(), count, round(rawPenalty)));
+            categories.add(new QualityCategoryResult(
+                    category.getKey(), category.getDescription(), count, round(rawPenalty)));
             totalPenalty += rawPenalty;
         }
         totalPenalty = Math.min(quality.getMaxPenalty(), round(totalPenalty));

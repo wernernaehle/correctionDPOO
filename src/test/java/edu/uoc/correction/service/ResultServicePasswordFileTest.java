@@ -35,7 +35,9 @@ class ResultServicePasswordFileTest {
         String passwordFile = new String(
                 Files.readAllBytes(temporaryDirectory.resolve("PASSWORD.txt")), StandardCharsets.UTF_8);
         assertTrue(passwordFile.contains("Estudiante: student"));
-        assertTrue(passwordFile.contains("Tu nota numérica es un 0.00."));
+        assertTrue(passwordFile.contains("Tu nota numérica es un 0.00. Te adjunto un fichero .zip"));
+        assertTrue(passwordFile.contains("tests, calidad y la nota obtenida."));
+        assertTrue(!passwordFile.contains("imagen adjunta"));
         assertTrue(passwordFile.contains("Te recomiendo comparar y analizar tus soluciones"));
         assertTrue(!passwordFile.contains("<changeme>"));
 

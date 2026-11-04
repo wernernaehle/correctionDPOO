@@ -75,16 +75,6 @@
                             <span class="badge badge-warning" style="font-size: 25px;">$math.roundTo(2, $notePAC)</span> sobre $math.roundTo(2, $scorePAC)
                         </div>
                     </div>
-                    <div class="form-group row">
-                        <label for="notePAC" class="col-sm-2 col-form-label text-danger"><b>IMPORTANTE</b></label>
-                        <div class="col-sm-10">
-                            <small class="form-text text-danger">Esta nota <b>NO es la nota final</b> de la PEC. Es la evaluación correspondiente a la ejecución de los tests:</small>
-                            <!--small class="form-text text-danger"><li>El ejercicio 3 sobre comentarios Javadoc, no se está evaluando con este corrector (de ahí que la nota no sea sobre 10).</li></small-->
-                            <small class="form-text text-danger"><li>Puedes recibir una penalización de la nota obtenida en función de la calidad del código proporcionado, tal y como se especifica en el enunciado.</li></small>
-                            #*<small class="form-text text-danger">En el Registro de EC del aula tienes la <b>NOTA DEFINITIVA</b> de la PEC</small>
-                            <small class="form-text text-danger">Revisa los comentarios en tu código con el plugin Codemment</small>*#
-                        </div>
-                    </div>
                 </div>
 
             </div>
@@ -277,17 +267,24 @@
     <p class="text-success">Sin penalización por calidad del código</p>
 #end
     <table class="table">
-        <thead><tr><th scope="col">Categoría</th><th scope="col">Incumplimientos</th><th scope="col">Penalización aplicada</th></tr></thead>
+        <thead><tr><th scope="col">Categoría</th><th scope="col">Qué revisa</th><th scope="col">Incumplimientos</th><th scope="col">Penalización aplicada</th></tr></thead>
         <tbody>
 #foreach($category in $quality.categories)
-        <tr><th>$category.category</th><td>$category.violations</td><td>#if($category.penalty > 0)−$math.roundTo(2, $category.penalty)#else 0.00#end</td></tr>
+        <tr><th>$category.category</th><td>$category.description</td><td>$category.violations</td><td>#if($category.penalty > 0)−$math.roundTo(2, $category.penalty)#else 0.00#end</td></tr>
 #end
         </tbody>
     </table>
 #if(!$quality.violations.isEmpty())
-    <h5>Detalle de incumplimientos</h5>
+    <h5>Detalle de incumplimientos por categoría</h5>
+#foreach($category in $quality.categories)
+#if($category.violations > 0)
+    <h6 class="mt-3">$category.category</h6>
 #foreach($violation in $quality.violations)
+#if($violation.category == $category.category)
     <p class="blockquote-footer mb-1"><code>$violation.file:$violation.line</code>: [${violation.rule.id}] $violation.message</p>
+#end
+#end
+#end
 #end
 #end
 </div>
