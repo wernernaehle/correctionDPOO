@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Set;
-import java.util.EnumSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -109,6 +108,29 @@ class CodeQualityEvaluatorTest {
                 .noneMatch(item -> item.getRule() == QualityRule.STRING_REFERENCE_COMPARISON));
         assertTrue(violations.stream()
                 .noneMatch(item -> item.getRule() == QualityRule.NON_CAMEL_CASE_NAME));
+    }
+
+    @Test
+    void doesNotReportPrivateMethodsCalledThroughThisOrUnqualifiedInvocation(@TempDir Path temp)
+            throws IOException {
+        Path reference = temp.resolve("reference");
+        Path student = temp.resolve("student");
+        Files.createDirectories(reference);
+        Files.createDirectories(student);
+        write(reference.resolve("Sample.java"), "class Sample { }");
+        write(student.resolve("Sample.java"), "class Sample {\n"
+                + "  void caller() { this.usedThroughThis(); usedUnqualified(); }\n"
+                + "  private void usedThroughThis() { }\n"
+                + "  private void usedUnqualified() { }\n"
+                + "  private void unused() { }\n"
+                + "}");
+        CodeQualityEvaluator evaluator = new CodeQualityEvaluator(configuredQuality(reference));
+        evaluator.validateConfiguration();
+
+        var violations = evaluator.evaluate(exercise("PAC2Ex1", student), 1.0).getViolations();
+        assertEquals(1, count(violations, QualityRule.UNUSED_PRIVATE_METHOD));
+        assertTrue(violations.stream().anyMatch(violation ->
+                violation.getRule() == QualityRule.UNUSED_PRIVATE_METHOD && violation.getLine() == 5));
     }
 
     @Test
