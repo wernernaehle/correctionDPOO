@@ -2,6 +2,7 @@ package edu.uoc.correction;
 
 import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.Student;
+import edu.uoc.correction.service.CodeQualityEvaluator;
 import edu.uoc.correction.service.GradleService;
 import edu.uoc.correction.service.JavadocEvaluator;
 import edu.uoc.correction.service.ResultService;
@@ -19,11 +20,14 @@ public class Main {
         Configuration configuration = new Configuration();
         JavadocEvaluator javadocEvaluator = new JavadocEvaluator(configuration);
         javadocEvaluator.validateConfiguration();
+        CodeQualityEvaluator codeQualityEvaluator = new CodeQualityEvaluator(configuration);
+        codeQualityEvaluator.validateConfiguration();
 
         GradleService gradleService = new GradleService(configuration);
         gradleService.run();
 
-        ResultService resultService = new ResultService(configuration, javadocEvaluator);
+        ResultService resultService = new ResultService(
+                configuration, javadocEvaluator, codeQualityEvaluator);
         List<Student> students = resultService.parseXmlTests();
         resultService.html(students);
         resultService.zips();

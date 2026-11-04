@@ -29,12 +29,18 @@ final class HtmlReportService {
     private final ScoreCalculationService scoreCalculationService;
 
     HtmlReportService(Configuration configuration) {
-        this(configuration, new JavadocEvaluator(configuration));
+        this(configuration, new JavadocEvaluator(configuration), new CodeQualityEvaluator(configuration));
     }
 
     HtmlReportService(Configuration configuration, JavadocEvaluator javadocEvaluator) {
+        this(configuration, javadocEvaluator, new CodeQualityEvaluator(configuration));
+    }
+
+    HtmlReportService(Configuration configuration, JavadocEvaluator javadocEvaluator,
+                      CodeQualityEvaluator codeQualityEvaluator) {
         this.configuration = configuration;
-        this.scoreCalculationService = new ScoreCalculationService(configuration, javadocEvaluator);
+        this.scoreCalculationService = new ScoreCalculationService(
+                configuration, javadocEvaluator, codeQualityEvaluator);
     }
 
     Map<String, Double> generate(List<Student> students) {

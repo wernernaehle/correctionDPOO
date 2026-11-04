@@ -268,6 +268,30 @@
                                 </tfoot>
                             #end
                         </table>
+#if($exercise.qualityEvaluation)
+#set($quality = $exercise.qualityEvaluation)
+<div id="$exercise.name-quality" class="border rounded p-3 mt-3">
+    <h5>Calidad del código</h5>
+    <p>Nota obtenida: $math.roundTo(2, $quality.scoreObtained) · Penalización por calidad: −$math.roundTo(2, $quality.penalty) (máx. $math.roundTo(2, $quality.maxPenalty)) · <b>Nota final del ejercicio: $math.roundTo(2, $quality.finalScore)</b></p>
+#if($quality.violations.isEmpty())
+    <p class="text-success">Sin penalización por calidad del código</p>
+#end
+    <table class="table">
+        <thead><tr><th scope="col">Categoría</th><th scope="col">Incumplimientos</th><th scope="col">Penalización aplicada</th></tr></thead>
+        <tbody>
+#foreach($category in $quality.categories)
+        <tr><th>$category.category</th><td>$category.violations</td><td>#if($category.penalty > 0)−$math.roundTo(2, $category.penalty)#else 0.00#end</td></tr>
+#end
+        </tbody>
+    </table>
+#if(!$quality.violations.isEmpty())
+    <h5>Detalle de incumplimientos</h5>
+#foreach($violation in $quality.violations)
+    <p class="blockquote-footer mb-1"><code>$violation.file:$violation.line</code>: [${violation.rule.id}] $violation.message</p>
+#end
+#end
+</div>
+#end
                     </div>
                 </div>
             </div>

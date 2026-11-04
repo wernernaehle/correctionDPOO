@@ -35,13 +35,20 @@ public class ResultService {
     private Map<String, Double> studentScores;
 
     public ResultService(Configuration configuration){
-        this(configuration, new JavadocEvaluator(configuration));
+        this(configuration, new JavadocEvaluator(configuration), new CodeQualityEvaluator(configuration));
     }
 
     public ResultService(Configuration configuration, JavadocEvaluator javadocEvaluator){
+        this(configuration, javadocEvaluator, new CodeQualityEvaluator(configuration));
+    }
+
+    public ResultService(Configuration configuration, JavadocEvaluator javadocEvaluator,
+                         CodeQualityEvaluator codeQualityEvaluator){
         this.configuration = configuration;
         javadocEvaluator.validateConfiguration();
-        this.htmlReportService = new HtmlReportService(configuration, javadocEvaluator);
+        codeQualityEvaluator.validateConfiguration();
+        this.htmlReportService = new HtmlReportService(
+                configuration, javadocEvaluator, codeQualityEvaluator);
         this.reportArchiveService = new ReportArchiveService(configuration);
     }
 

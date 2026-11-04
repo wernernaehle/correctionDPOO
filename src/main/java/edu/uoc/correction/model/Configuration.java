@@ -2,14 +2,22 @@ package edu.uoc.correction.model;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Scanner;
 import java.util.TreeMap;
 import java.util.Locale;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -27,6 +35,12 @@ public class Configuration {
     private String javadocExerciseTitle;
     TreeMap<String, ExerciceConfiguration> mapExercisesTests;
     private double scorePAC;
+    private final Map<QualityCategory, Double> qualityWeights = defaultQualityWeights();
+    private int qualityViolationsForFullCategoryPenalty = 3;
+    private int qualityComplexityThreshold = 10;
+    private int qualityNestingThreshold = 3;
+    private int qualityMethodLengthThreshold = 30;
+    private final Set<QualityRule> qualityDisabledRules = EnumSet.noneOf(QualityRule.class);
 
     public Configuration(){
         mapExercisesTests = new TreeMap<>();
@@ -56,6 +70,8 @@ public class Configuration {
         ScoreAccumulator totalScore = new ScoreAccumulator();
         Map<String, String> minimumRequirementProperties = new LinkedHashMap<>();
         Map<String, Map<String, String>> javadocProperties = new LinkedHashMap<>();
+        Map<String, Map<String, String>> qualityProperties = new LinkedHashMap<>();
+        Map<String, String> globalQualityProperties = new LinkedHashMap<>();
         while(scanner.hasNextLine()) {
             String line = scanner.nextLine().trim();
             if (line.isEmpty() || line.startsWith("#")) {
@@ -67,6 +83,14 @@ public class Configuration {
             }
             if (line.contains(".javadoc.")) {
                 parseJavadocProperty(line, javadocProperties);
+                continue;
+            }
+            if (line.startsWith("quality.")) {
+                parseGlobalQualityProperty(line, globalQualityProperties);
+                continue;
+            }
+            if (line.contains(".quality.")) {
+                parseExerciseQualityProperty(line, qualityProperties);
                 continue;
             }
             if (line.contains("minimumRequirements")) {
@@ -91,6 +115,8 @@ public class Configuration {
             }
         }
         applyMinimumRequirementProperties(minimumRequirementProperties);
+        applyGlobalQualityProperties(globalQualityProperties);
+        applyQualityProperties(qualityProperties);
         totalScore.value += applyJavadocProperties(javadocProperties);
         boolean javadocEnabled = mapExercisesTests.values().stream()
                 .map(ExerciceConfiguration::getJavadocConfiguration)
@@ -104,6 +130,308 @@ public class Configuration {
                     "the title must not duplicate a configured exercise");
         }
         return totalScore.value;
+    }
+
+    private static Map<QualityCategory, Double> defaultQualityWeights() {
+            Map<QualityCategory, Double> weights = new EnumMap<>(QualityCategory.class);
+            for (QualityCategory category : QualityCategory.values()) {
+                weights.put(category, 1.0);
+            }
+            return weights;
+        }
+
+    private void parseGlobalQualityProperty(String line, Map<String, String> properties) {
+            String[] parts = splitProperty(line, "quality");
+            if (properties.putIfAbsent(parts[0], parts[1]) != null) {
+                throw invalidQuality("quality." + parts[0], parts[1], "property is defined more than once");
+            }
+        }
+
+    private void parseExerciseQualityProperty(String line, Map<String, Map<String, String>> properties) {
+            int assignment = line.indexOf('=');
+            String key = assignment < 0 ? line.trim() : line.substring(0, assignment).trim();
+            String value = assignment < 0 ? "" : line.substring(assignment + 1).trim();
+            int marker = key.indexOf(".quality.");
+            if (assignment < 0 || marker <= 0) {
+                throw invalidQuality(key, value, "expected Exercise.quality.property = value");
+            }
+            String exerciseName = key.substring(0, marker);
+            String propertyName = key.substring(marker + ".quality.".length());
+            if (propertyName.isEmpty()) {
+                throw invalidQuality(key, value, "property name is missing");
+            }
+            Map<String, String> exerciseProperties =
+                    properties.computeIfAbsent(exerciseName, ignored -> new LinkedHashMap<>());
+            if (exerciseProperties.putIfAbsent(propertyName, value) != null) {
+                throw invalidQuality(key, value, "property is defined more than once");
+            }
+        }
+
+    private String[] splitProperty(String line, String prefix) {
+            int assignment = line.indexOf('=');
+            String key = assignment < 0 ? line.trim() : line.substring(0, assignment).trim();
+            String value = assignment < 0 ? "" : line.substring(assignment + 1).trim();
+            if (assignment < 0 || !key.startsWith(prefix + ".")) {
+                throw invalidQuality(key, value, "expected " + prefix + ".property = value");
+            }
+            return new String[]{key.substring(prefix.length() + 1), value};
+        }
+
+    private void applyGlobalQualityProperties(Map<String, String> properties) {
+            for (Map.Entry<String, String> property : properties.entrySet()) {
+                String name = property.getKey();
+                String value = property.getValue();
+                switch (name) {
+                    case "weights":
+                        parseQualityWeights("quality.weights", value, qualityWeights);
+                        break;
+                    case "violationsForFullCategoryPenalty":
+                        qualityViolationsForFullCategoryPenalty = parsePositiveInteger(
+                                "quality." + name, value);
+                        break;
+                    case "complexityThreshold":
+                        qualityComplexityThreshold = parsePositiveInteger("quality." + name, value);
+                        break;
+                    case "nestingThreshold":
+                        qualityNestingThreshold = parsePositiveInteger("quality." + name, value);
+                        break;
+                    case "methodLengthThreshold":
+                        qualityMethodLengthThreshold = parsePositiveInteger("quality." + name, value);
+                        break;
+                    case "disabledRules":
+                        qualityDisabledRules.addAll(parseDisabledRules("quality." + name, value));
+                        break;
+                    default:
+                        throw invalidQuality("quality." + name, value, "unknown property");
+                }
+            }
+        }
+
+    private void applyQualityProperties(Map<String, Map<String, String>> properties) {
+            for (Map.Entry<String, Map<String, String>> entry : properties.entrySet()) {
+                String exerciseName = entry.getKey();
+                Map<String, String> values = entry.getValue();
+                ExerciceConfiguration exerciseConfiguration = mapExercisesTests.get(exerciseName);
+                if (exerciseConfiguration == null) {
+                    throw invalidQuality(exerciseName + ".quality.enabled",
+                            values.getOrDefault("enabled", "false"), "exercise has no score definition");
+                }
+                for (String propertyName : values.keySet()) {
+                    if (!Set.of("enabled", "maxPenalty", "classes", "referencePath", "weights",
+                            "violationsForFullCategoryPenalty", "complexityThreshold",
+                            "nestingThreshold", "methodLengthThreshold", "disabledRules")
+                            .contains(propertyName)) {
+                        throw invalidQuality(exerciseName + ".quality." + propertyName,
+                                values.get(propertyName), "unknown property");
+                    }
+                }
+                String enabledValue = values.getOrDefault("enabled", "false");
+                if (!"true".equalsIgnoreCase(enabledValue) && !"false".equalsIgnoreCase(enabledValue)) {
+                    throw invalidQuality(exerciseName + ".quality.enabled", enabledValue,
+                            "expected true or false");
+                }
+                if (!Boolean.parseBoolean(enabledValue.toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                double maxPenalty = parsePositiveDouble(exerciseName + ".quality.maxPenalty",
+                        values.get("maxPenalty"));
+                Map<QualityCategory, Double> weights = new EnumMap<>(qualityWeights);
+                if (values.containsKey("weights")) {
+                    parseQualityWeights(exerciseName + ".quality.weights", values.get("weights"), weights);
+                }
+                int fullCategory = parseOptionalPositiveInteger(exerciseName, values,
+                        "violationsForFullCategoryPenalty", qualityViolationsForFullCategoryPenalty);
+                int complexity = parseOptionalPositiveInteger(exerciseName, values,
+                        "complexityThreshold", qualityComplexityThreshold);
+                int nesting = parseOptionalPositiveInteger(exerciseName, values,
+                        "nestingThreshold", qualityNestingThreshold);
+                int methodLength = parseOptionalPositiveInteger(exerciseName, values,
+                        "methodLengthThreshold", qualityMethodLengthThreshold);
+                Set<QualityRule> disabled = EnumSet.noneOf(QualityRule.class);
+                disabled.addAll(qualityDisabledRules);
+                if (values.containsKey("disabledRules")) {
+                    disabled.addAll(parseDisabledRules(exerciseName + ".quality.disabledRules",
+                            values.get("disabledRules")));
+                }
+
+                Path referencePath = resolveQualityReferencePath(exerciseName, values.get("referencePath"));
+                if (!Files.isDirectory(referencePath)) {
+                    throw invalidQuality(exerciseName + ".quality.referencePath",
+                            values.getOrDefault("referencePath", referencePath.toString()),
+                            "reference directory does not exist");
+                }
+                Set<String> classes = values.containsKey("classes")
+                        ? parseQualityClasses(exerciseName, values.get("classes"))
+                        : discoverReferenceClasses(exerciseName, referencePath);
+                validateQualityReferenceClasses(exerciseName, referencePath, classes);
+                exerciseConfiguration.setQualityConfiguration(new QualityExerciseConfiguration(
+                        maxPenalty, weights, fullCategory, complexity, nesting, methodLength,
+                        classes, referencePath, disabled));
+            }
+        }
+
+    private Path resolveQualityReferencePath(String exerciseName, String configuredPath) {
+            if (configuredPath != null) {
+                return Paths.get(configuredPath).toAbsolutePath().normalize();
+            }
+            String suffix = exerciseName.startsWith(name) ? exerciseName.substring(name.length()) : exerciseName;
+            Path legacy = Paths.get("reference-solutions", "DPOO_" + name + "_sol", exerciseName + "_sol");
+            Path generic = Paths.get("reference-solutions", name, suffix);
+            Path resolvedLegacy = legacy.toAbsolutePath().normalize();
+            return Files.isDirectory(resolvedLegacy) ? resolvedLegacy : generic.toAbsolutePath().normalize();
+        }
+
+    private Set<String> parseQualityClasses(String exerciseName, String value) {
+            if (value == null || value.trim().isEmpty()) {
+                throw invalidQuality(exerciseName + ".quality.classes",
+                        value == null ? "(missing)" : value, "class list must not be empty");
+            }
+            Set<String> classes = new TreeSet<>();
+            for (String item : value.split(",", -1)) {
+                String className = item.trim();
+                if (className.isEmpty() || !className.matches("[A-Za-z_$][A-Za-z0-9_$]*")
+                        || !classes.add(className)) {
+                    throw invalidQuality(exerciseName + ".quality.classes", value,
+                            "class names must be valid, non-empty, and unique");
+                }
+            }
+            return classes;
+        }
+
+    private Set<String> discoverReferenceClasses(String exerciseName, Path referencePath) {
+            try {
+                Set<String> classes = new TreeSet<>();
+                Path sourceRoot = Files.isDirectory(referencePath.resolve("src/main/java"))
+                        ? referencePath.resolve("src/main/java")
+                        : Files.isDirectory(referencePath.resolve("src")) ? referencePath.resolve("src") : referencePath;
+                try (java.util.stream.Stream<Path> files = Files.walk(sourceRoot)) {
+                    files.filter(path -> path.toString().endsWith(".java"))
+                            .filter(path -> !path.toString().contains("/test/"))
+                            .forEach(path -> classes.add(path.getFileName().toString()
+                                    .replaceFirst("\\.java$", "")));
+                }
+                if (classes.isEmpty()) {
+                    throw invalidQuality(exerciseName + ".quality.referencePath",
+                            referencePath.toString(), "reference directory contains no Java source classes");
+                }
+                return classes;
+            } catch (IOException e) {
+                throw invalidQuality(exerciseName + ".quality.referencePath",
+                        referencePath.toString(), "could not read reference classes: " + e.getMessage());
+            }
+        }
+
+    private void validateQualityReferenceClasses(String exerciseName, Path referencePath, Set<String> classes) {
+            Path sourceRoot = Files.isDirectory(referencePath.resolve("src/main/java"))
+                    ? referencePath.resolve("src/main/java")
+                    : Files.isDirectory(referencePath.resolve("src")) ? referencePath.resolve("src") : referencePath;
+            try {
+                Set<String> found = new HashSet<>();
+                try (java.util.stream.Stream<Path> files = Files.walk(sourceRoot)) {
+                    files.filter(path -> path.toString().endsWith(".java"))
+                            .filter(path -> !path.toString().contains("/test/"))
+                            .forEach(path -> found.add(path.getFileName().toString()
+                                    .replaceFirst("\\.java$", "")));
+                }
+                for (String className : classes) {
+                    if (!found.contains(className)) {
+                        throw invalidQuality(exerciseName + ".quality.classes", String.join(",", classes),
+                                "class '" + className + "' does not exist in " + referencePath);
+                    }
+                }
+            } catch (IOException e) {
+                throw invalidQuality(exerciseName + ".quality.referencePath", referencePath.toString(),
+                        "could not read reference source: " + e.getMessage());
+            }
+        }
+
+    private void parseQualityWeights(String property, String value, Map<QualityCategory, Double> weights) {
+            Set<QualityCategory> configuredCategories = new HashSet<>();
+            for (String item : value.split(",", -1)) {
+                String[] parts = item.trim().split(":", -1);
+                if (parts.length != 2) {
+                    throw invalidQuality(property, value, "weights must use category:number");
+                }
+                QualityCategory category = null;
+                for (QualityCategory candidate : QualityCategory.values()) {
+                    if (candidate.getKey().equals(parts[0].trim())) {
+                        category = candidate;
+                        break;
+                    }
+                }
+                if (category == null) {
+                    throw invalidQuality(property, value, "unknown category '" + parts[0].trim() + "'");
+                }
+                if (!configuredCategories.add(category)) {
+                    throw invalidQuality(property, value,
+                            "category '" + category.getKey() + "' is listed more than once");
+                }
+                double weight;
+                try {
+                    weight = Double.parseDouble(parts[1].trim());
+                } catch (NumberFormatException e) {
+                    throw invalidQuality(property, value, "weights must be numeric");
+                }
+                if (!Double.isFinite(weight) || weight < 0) {
+                    throw invalidQuality(property, value, "weights must be finite and non-negative");
+                }
+                weights.put(category, weight);
+            }
+            if (weights.values().stream().mapToDouble(Double::doubleValue).sum() <= 0) {
+                throw invalidQuality(property, value, "the sum of weights must be greater than 0");
+            }
+        }
+
+    private Set<QualityRule> parseDisabledRules(String property, String value) {
+            Set<QualityRule> rules = EnumSet.noneOf(QualityRule.class);
+            if (value.trim().isEmpty()) {
+                return rules;
+            }
+            for (String item : value.split(",", -1)) {
+                QualityRule rule = QualityRule.fromId(item.trim());
+                if (rule == null || !rules.add(rule)) {
+                    throw invalidQuality(property, value,
+                            rule == null ? "unknown rule '" + item.trim() + "'" : "rule is listed more than once");
+                }
+            }
+            return rules;
+        }
+
+    private int parseOptionalPositiveInteger(String exerciseName, Map<String, String> values,
+                                                 String property, int fallback) {
+            return values.containsKey(property)
+                    ? parsePositiveInteger(exerciseName + ".quality." + property, values.get(property))
+                    : fallback;
+        }
+
+    private int parsePositiveInteger(String property, String value) {
+            try {
+                int parsed = Integer.parseInt(value);
+                if (parsed > 0) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+                // Report the property and original value below.
+            }
+            throw invalidQuality(property, value, "expected a positive integer");
+        }
+
+    private double parsePositiveDouble(String property, String value) {
+            try {
+                double parsed = Double.parseDouble(value);
+                if (Double.isFinite(parsed) && parsed > 0) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+                // Report the property and original value below.
+            }
+            throw invalidQuality(property, value == null ? "(missing)" : value,
+                    "expected a finite number greater than 0");
+        }
+
+    private IllegalArgumentException invalidQuality(String property, String value, String reason) {
+            return new IllegalArgumentException("Invalid code-quality configuration for property '"
+                    + property + "' with value '" + value + "': " + reason);
     }
 
     private void parseJavadocExerciseTitle(String line) {
