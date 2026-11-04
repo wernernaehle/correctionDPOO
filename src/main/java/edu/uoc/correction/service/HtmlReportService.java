@@ -2,6 +2,8 @@ package edu.uoc.correction.service;
 
 import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.Exercise;
+import edu.uoc.correction.model.JavadocClassResult;
+import edu.uoc.correction.model.JavadocEvaluation;
 import edu.uoc.correction.model.Student;
 import org.apache.velocity.Template;
 import org.apache.velocity.VelocityContext;
@@ -27,8 +29,12 @@ final class HtmlReportService {
     private final ScoreCalculationService scoreCalculationService;
 
     HtmlReportService(Configuration configuration) {
+        this(configuration, new JavadocEvaluator(configuration));
+    }
+
+    HtmlReportService(Configuration configuration, JavadocEvaluator javadocEvaluator) {
         this.configuration = configuration;
-        this.scoreCalculationService = new ScoreCalculationService(configuration);
+        this.scoreCalculationService = new ScoreCalculationService(configuration, javadocEvaluator);
     }
 
     Map<String, Double> generate(List<Student> students) {
@@ -48,6 +54,7 @@ final class HtmlReportService {
         List<Exercise> exercises = student.getExercises();
         List<Double> exerciseScores = new ArrayList<>();
         double studentScore = scoreCalculationService.calculateStudentScore(exercises, exerciseScores);
+        JavadocEvaluation javadocEvaluation = combineJavadocEvaluations(exercises);
 
         String[] splitName = student.getName().split("_PEC_");
         context.put("math", new MathTool());
@@ -58,6 +65,8 @@ final class HtmlReportService {
         context.put("notePAC", studentScore);
         context.put("scorePAC", configuration.getScorePAC());
         context.put("configurationExercises", configuration.getMapExercisesTests());
+        context.put("javadocExerciseTitle", configuration.getJavadocExerciseTitle());
+        context.put("javadocEvaluation", javadocEvaluation);
 
         try (Writer writer = new FileWriter(
                 configuration.getDirectoryReportsPACs() + "/" + student.getName() + "/index.html")) {
@@ -68,5 +77,18 @@ final class HtmlReportService {
             throw new IllegalStateException("Could not write report for student " + student.getName(), e);
         }
         return studentScore;
+    }
+
+    private JavadocEvaluation combineJavadocEvaluations(List<Exercise> exercises) {
+        if (exercises == null) {
+            return null;
+        }
+        List<JavadocClassResult> classResults = new ArrayList<>();
+        for (Exercise exercise : exercises) {
+            if (exercise != null && exercise.getJavadocEvaluation() != null) {
+                classResults.addAll(exercise.getJavadocEvaluation().getClassResults());
+            }
+        }
+        return classResults.isEmpty() ? null : new JavadocEvaluation(classResults);
     }
 }

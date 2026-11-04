@@ -35,8 +35,13 @@ public class ResultService {
     private Map<String, Double> studentScores;
 
     public ResultService(Configuration configuration){
+        this(configuration, new JavadocEvaluator(configuration));
+    }
+
+    public ResultService(Configuration configuration, JavadocEvaluator javadocEvaluator){
         this.configuration = configuration;
-        this.htmlReportService = new HtmlReportService(configuration);
+        javadocEvaluator.validateConfiguration();
+        this.htmlReportService = new HtmlReportService(configuration, javadocEvaluator);
         this.reportArchiveService = new ReportArchiveService(configuration);
     }
 
@@ -97,6 +102,7 @@ public class ResultService {
                                List<Exercise> exercises) {
         Exercise exercise =  new Exercise();
         exercise.setName(exerciseDirectory.getName());
+        exercise.setSourceDirectory(new File(exerciseDirectory, "src").getAbsolutePath());
         List<File> testResultFiles = new ArrayList<>();
         File projectDirectory = new File(exerciseDirectory.getAbsolutePath());
         if(projectDirectory.exists()){

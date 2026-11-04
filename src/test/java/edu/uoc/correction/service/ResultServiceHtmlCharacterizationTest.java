@@ -5,6 +5,9 @@ import edu.uoc.correction.model.ExerciceConfiguration;
 import edu.uoc.correction.model.Exercise;
 import edu.uoc.correction.model.Failure;
 import edu.uoc.correction.model.MinimumRequirement;
+import edu.uoc.correction.model.JavadocClassConfiguration;
+import edu.uoc.correction.model.JavadocElementType;
+import edu.uoc.correction.model.JavadocExerciseConfiguration;
 import edu.uoc.correction.model.Student;
 import edu.uoc.correction.model.Testcase;
 import edu.uoc.correction.model.TestNote;
@@ -18,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -164,5 +168,102 @@ class ResultServiceHtmlCharacterizationTest {
                 StandardCharsets.UTF_8);
         assertTrue(report.contains("Ejercicio no compila o No Presentado"));
         assertTrue(!report.contains("No se cumplen los requisitos mínimos"));
+    }
+
+    @Test
+    void includesPartialJavadocScoreAndPenaltyInTheReportAndExerciseTotal(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Configuration configuration = new Configuration();
+        configuration.setDirectoryReportsPACs(temporaryDirectory.resolve("reports").toString());
+        configuration.setName("PAC2");
+        configuration.setScorePAC(2.0);
+        configuration.setJavadocExerciseTitle("PAC2Ex3");
+
+        Path reference = Files.createDirectories(temporaryDirectory.resolve("reference/src"));
+        Files.write(reference.resolve("DocSubject.java"),
+                "/** Represents a reference subject.\n * @author Reference\n */\n"
+                        .concat("public class DocSubject {}").getBytes(StandardCharsets.UTF_8));
+
+        TestNote testNote = new TestNote();
+        testNote.setTestName("ExampleTest");
+        testNote.setScore(1.0);
+        ExerciceConfiguration exerciseConfiguration = new ExerciceConfiguration();
+        exerciseConfiguration.setListTestNote(Collections.singletonList(testNote));
+        exerciseConfiguration.setJavadocConfiguration(new JavadocExerciseConfiguration(true,
+                Collections.singletonList(new JavadocClassConfiguration("DocSubject", 0.5, 0.5,
+                        EnumSet.of(JavadocElementType.CLASS), temporaryDirectory.resolve("reference").toString()))));
+        configuration.getMapExercisesTests().put("PAC2Ex1", exerciseConfiguration);
+
+        String partialReport = renderJavadocReport(configuration, temporaryDirectory, "partial",
+                "/** Describes a useful subject in another way. */ public class DocSubject {}");
+        assertTrue(partialReport.contains(">1.75</span> sobre 2.0"));
+        assertTrue(partialReport.contains("id=\"PAC2Ex3\""));
+        assertTrue(partialReport.contains("PAC2Ex3</p>"));
+        assertTrue(partialReport.contains(">0.5 / 0.5</td>"));
+        assertTrue(partialReport.contains(">0.25 / 0.5</td>"));
+        assertTrue(partialReport.contains(">−0.25</td>"));
+        assertTrue(partialReport.contains(">0.75 / 1.0</td>"));
+        assertTrue(partialReport.contains("TOTAL JAVADOC"));
+        assertTrue(partialReport.contains("0.75 / 1.0"));
+        assertTrue(partialReport.contains(">1.0</th>"));
+        assertTrue(partialReport.contains("0.75 / 1.0"));
+
+        String missingReport = renderJavadocReport(configuration, temporaryDirectory, "missing",
+                "/**  */ // ordinary comment\npublic class DocSubject {}");
+        assertTrue(missingReport.contains("No se han encontrado comentarios Javadoc."));
+        assertTrue(missingReport.contains(">0.0 / 0.5</td>"));
+        assertTrue(missingReport.contains(">0.0 / 1.0</td>"));
+        assertTrue(missingReport.contains("TOTAL JAVADOC"));
+        assertTrue(missingReport.contains("0.0 / 1.0"));
+
+        String completeReport = renderJavadocReport(configuration, temporaryDirectory, "complete",
+                "/** Explains the subject's purpose.\n * @author Student\n */\n"
+                        + "public class DocSubject {}");
+        assertTrue(completeReport.contains(">2.0</span> sobre 2.0"));
+        assertTrue(completeReport.contains(">0.5 / 0.5</td>"));
+        assertTrue(completeReport.contains(">0.0</td>"));
+        assertTrue(completeReport.contains(">1.0 / 1.0</td>"));
+        assertTrue(completeReport.contains("TOTAL JAVADOC"));
+        assertTrue(completeReport.contains("1.0 / 1.0"));
+
+        exerciseConfiguration.setMinimumRequirements(Collections.singletonList(
+                new MinimumRequirement("ExampleTest", "mustPass()")));
+        String minimumFailureReport = renderJavadocReport(configuration, temporaryDirectory,
+                "minimum-failure", "/** Explains the subject's purpose.\n * @author Student\n */\n"
+                        + "public class DocSubject {}");
+        assertTrue(minimumFailureReport.contains("No se cumplen los requisitos mínimos"));
+        assertTrue(minimumFailureReport.contains(">1.0</span> sobre 2.0"));
+        assertTrue(minimumFailureReport.contains("TOTAL JAVADOC"));
+        assertTrue(minimumFailureReport.contains("1.0 / 1.0"));
+        assertTrue(!minimumFailureReport.contains("La puntuación de Javadoc no se aplica"));
+    }
+
+    private String renderJavadocReport(Configuration configuration, Path temporaryDirectory,
+                                       String suffix, String source) throws IOException {
+        String studentName = "learner_PEC_javadoc_" + suffix;
+        Path studentSource = Files.createDirectories(
+                temporaryDirectory.resolve("students").resolve(suffix).resolve("src"));
+        Files.write(studentSource.resolve("DocSubject.java"), source.getBytes(StandardCharsets.UTF_8));
+
+        Testsuite testSuite = new Testsuite();
+        testSuite.setName("edu.uoc.pac2.ExampleTest");
+        testSuite.setTests(1);
+        testSuite.setFailures(0);
+        testSuite.setErrors(0);
+        testSuite.setScore(1.0);
+        Exercise exercise = new Exercise();
+        exercise.setName("PAC2Ex1");
+        exercise.setSourceDirectory(studentSource.toString());
+        exercise.setTestsuiteList(Collections.singletonList(testSuite));
+        Student student = new Student();
+        student.setName(studentName);
+        student.setExercises(Collections.singletonList(exercise));
+
+        Path studentReportDirectory = Path.of(configuration.getDirectoryReportsPACs(), studentName);
+        Files.createDirectories(studentReportDirectory);
+        new ResultService(configuration).html(Collections.singletonList(student));
+
+        return new String(Files.readAllBytes(studentReportDirectory.resolve("index.html")),
+                StandardCharsets.UTF_8);
     }
 }
