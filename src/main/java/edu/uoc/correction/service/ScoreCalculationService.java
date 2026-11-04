@@ -4,6 +4,7 @@ import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.ExerciceConfiguration;
 import edu.uoc.correction.model.Exercise;
 import edu.uoc.correction.model.MinimumRequirement;
+import edu.uoc.correction.model.JavadocEvaluation;
 import edu.uoc.correction.model.TestNote;
 import edu.uoc.correction.model.Testcase;
 import edu.uoc.correction.model.Testsuite;
@@ -16,9 +17,15 @@ final class ScoreCalculationService {
     private static final Logger LOGGER = Logger.getLogger(ScoreCalculationService.class.getName());
 
     private final Configuration configuration;
+    private final JavadocEvaluator javadocEvaluator;
 
     ScoreCalculationService(Configuration configuration) {
+        this(configuration, new JavadocEvaluator(configuration));
+    }
+
+    ScoreCalculationService(Configuration configuration, JavadocEvaluator javadocEvaluator) {
         this.configuration = configuration;
+        this.javadocEvaluator = javadocEvaluator;
     }
 
     double calculateStudentScore(List<Exercise> exercises, List<Double> exerciseScores) {
@@ -33,6 +40,7 @@ final class ScoreCalculationService {
                 continue;
             }
             double exerciseScore = 0;
+            JavadocEvaluation javadocEvaluation = javadocEvaluator.evaluate(exercise);
             List<MinimumRequirement> failedRequirements =
                     findFailedMinimumRequirements(exercise);
             exercise.setFailedMinimumRequirements(failedRequirements);
@@ -50,7 +58,11 @@ final class ScoreCalculationService {
                 }
                 exerciseScores.add(exerciseScore);
             }
+            exercise.setScore(exerciseScore);
             studentScore += exerciseScore;
+            if (javadocEvaluation != null) {
+                studentScore += javadocEvaluation.getTotalScore();
+            }
         }
         return studentScore;
     }

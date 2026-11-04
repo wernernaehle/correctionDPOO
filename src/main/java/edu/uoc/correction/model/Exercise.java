@@ -13,6 +13,9 @@ public class Exercise {
     private String reportUrl;
     private String comment;
     private List<MinimumRequirement> failedMinimumRequirements = new ArrayList<>();
+    private String sourceDirectory;
+    private JavadocEvaluation javadocEvaluation;
+    private double score;
 
     public String getName() {
         return name;
@@ -57,5 +60,29 @@ public class Exercise {
 
     public boolean isMinimumRequirementsFailed() {
         return !failedMinimumRequirements.isEmpty();
+    }
+
+    public String getSourceDirectory() {
+        return sourceDirectory;
+    }
+
+    public void setSourceDirectory(String sourceDirectory) {
+        this.sourceDirectory = sourceDirectory;
+    }
+
+    public JavadocEvaluation getJavadocEvaluation() {
+        return javadocEvaluation;
+    }
+
+    public void setJavadocEvaluation(JavadocEvaluation javadocEvaluation) {
+        this.javadocEvaluation = javadocEvaluation;
+    }
+
+    public double getScore() {
+        return score;
+    }
+
+    public void setScore(double score) {
+        this.score = score;
     }
 }

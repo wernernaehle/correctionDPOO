@@ -3,6 +3,7 @@ package edu.uoc.correction;
 import edu.uoc.correction.model.Configuration;
 import edu.uoc.correction.model.Student;
 import edu.uoc.correction.service.GradleService;
+import edu.uoc.correction.service.JavadocEvaluator;
 import edu.uoc.correction.service.ResultService;
 
 import java.io.IOException;
@@ -16,11 +17,13 @@ public class Main {
     public static void main(String[] args) throws IOException {
 
         Configuration configuration = new Configuration();
+        JavadocEvaluator javadocEvaluator = new JavadocEvaluator(configuration);
+        javadocEvaluator.validateConfiguration();
 
         GradleService gradleService = new GradleService(configuration);
         gradleService.run();
 
-        ResultService resultService = new ResultService(configuration);
+        ResultService resultService = new ResultService(configuration, javadocEvaluator);
         List<Student> students = resultService.parseXmlTests();
         resultService.html(students);
         resultService.zips();

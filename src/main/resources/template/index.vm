@@ -33,6 +33,11 @@
                                 <a class="nav-link mr-2" href="#$exercise.name">$exercise.name</a>
                             </li>
                         #end
+                        #if($javadocEvaluation)
+                            <li class="nav-item">
+                                <a class="nav-link mr-2" href="#$javadocExerciseTitle">$javadocExerciseTitle</a>
+                            </li>
+                        #end
 
                     </ul>
                 </div>
@@ -268,6 +273,55 @@
             </div>
         #end
 
+        #if($javadocEvaluation)
+            <div class="container-fluid" id="$javadocExerciseTitle">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <p class="h4"><i class="fa fa-file-o mr-2" aria-hidden="true"></i> $javadocExerciseTitle</p>
+                    </div>
+                    <div class="card-body">
+                        <h5>Javadoc</h5>
+                        <table class="table">
+                            <thead>
+                            <tr>
+                                <th scope="col">Class</th>
+                                <th scope="col">Presence</th>
+                                <th scope="col">Quality</th>
+                                <th scope="col">Penalty</th>
+                                <th scope="col">Score</th>
+                                <th scope="col">Details</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            #foreach($classResult in $javadocEvaluation.classResults)
+                            <tr>
+                                <th>$classResult.className</th>
+                                <td>$math.roundTo(2, $classResult.presenceScore) / $math.roundTo(2, $classResult.presenceMaxScore)</td>
+                                <td>$math.roundTo(2, $classResult.qualityScore) / $math.roundTo(2, $classResult.qualityMaxScore)</td>
+                                <td>#if($classResult.penalty > 0)−$math.roundTo(2, $classResult.penalty)#else$math.roundTo(2, 0)#end</td>
+                                <td>$math.roundTo(2, $classResult.totalScore) / $math.roundTo(2, $classResult.maximumScore)</td>
+                                <td>
+                                    #if($classResult.statusMessage && !$classResult.statusMessage.isEmpty())<p class="text-danger mb-1">$classResult.statusMessage</p>#end
+                                    #foreach($detail in $classResult.details)<p class="blockquote-footer mb-1">$detail</p>#end
+                                </td>
+                            </tr>
+                            #end
+                            </tbody>
+                            <tfoot>
+                            <tr class="table-primary">
+                                <th scope="col">TOTAL JAVADOC</th>
+                                <th scope="col">$math.roundTo(2, $javadocEvaluation.presenceScore) / $math.roundTo(2, $javadocEvaluation.presenceMaximumScore)</th>
+                                <th scope="col"></th>
+                                <th scope="col"></th>
+                                <th scope="col">$math.roundTo(2, $javadocEvaluation.totalScore) / $math.roundTo(2, $javadocEvaluation.maximumScore)</th>
+                                <th scope="col"></th>
+                            </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        #end
 
     </body>
 </html>

@@ -133,6 +133,103 @@ class ConfigurationCharacterizationTest {
     }
 
     @Test
+    void parsesJavadocPropertiesAndAddsTheirMaximumToThePacScore(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Configuration configuration = loadConfiguration(temporaryDirectory,
+                "deliveries=/students\n"
+                        + "reports=/reports\n"
+                        + "tests=/tests\n"
+                        + "name=PAC2\n"
+                        + "javadoc.exercise.title=PAC2Ex3\n"
+                        + "PAC2Ex2=ExampleTest:1.0#configured():1.0\n"
+                        + "PAC2Ex2.javadoc.enabled = true\n"
+                        + "PAC2Ex2.javadoc.classes = MuseumArtifact, OtherArtifact\n"
+                        + "PAC2Ex2.javadoc.presenceScore = 0.5\n"
+                        + "PAC2Ex2.javadoc.qualityMaxScore = 0.5\n"
+                        + "PAC2Ex2.javadoc.include = class, fields, publicMethods\n"
+                        + "PAC2Ex2.javadoc.MuseumArtifact.presenceScore = 0.75\n");
+
+        JavadocExerciseConfiguration javadoc = configuration.getMapExercisesTests()
+                .get("PAC2Ex2").getJavadocConfiguration();
+        assertTrue(javadoc.isEnabled());
+        assertEquals(2, javadoc.getClasses().size());
+        assertEquals(0.75, javadoc.getClasses().get(0).getPresenceScore());
+        assertEquals(0.5, javadoc.getClasses().get(1).getPresenceScore());
+        assertEquals(0.5, javadoc.getClasses().get(0).getQualityMaxScore());
+        assertEquals(3, javadoc.getClasses().get(0).getInclude().size());
+        assertEquals(3.25, configuration.getScorePAC());
+        assertEquals("PAC2Ex3", configuration.getJavadocExerciseTitle());
+    }
+
+    @Test
+    void rejectsNonNumericJavadocScoreWithPropertyAndValue(@TempDir Path temporaryDirectory)
+            throws IOException {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> loadConfiguration(temporaryDirectory,
+                        "deliveries=/students\n"
+                                + "reports=/reports\n"
+                                + "tests=/tests\n"
+                                + "name=PAC2\n"
+                                + "PAC2Ex2=ExampleTest:1.0\n"
+                                + "PAC2Ex2.javadoc.enabled=true\n"
+                                + "PAC2Ex2.javadoc.classes=Example\n"
+                                + "PAC2Ex2.javadoc.presenceScore=not-a-number\n"
+                                + "PAC2Ex2.javadoc.qualityMaxScore=0.5\n"));
+
+        assertTrue(failure.getMessage().contains("PAC2Ex2.javadoc.presenceScore"));
+        assertTrue(failure.getMessage().contains("not-a-number"));
+    }
+
+    @Test
+    void rejectsJavadocScoreWithoutListedClass(@TempDir Path temporaryDirectory) throws IOException {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> loadConfiguration(temporaryDirectory,
+                        "deliveries=/students\n"
+                                + "reports=/reports\n"
+                                + "tests=/tests\n"
+                                + "name=PAC2\n"
+                                + "PAC2Ex2=ExampleTest:1.0\n"
+                                + "PAC2Ex2.javadoc.enabled=true\n"
+                                + "PAC2Ex2.javadoc.classes=Example\n"
+                                + "PAC2Ex2.javadoc.presenceScore=0.5\n"
+                                + "PAC2Ex2.javadoc.qualityMaxScore=0.5\n"
+                                + "PAC2Ex2.javadoc.Other.presenceScore=1.0\n"));
+
+        assertTrue(failure.getMessage().contains("PAC2Ex2.javadoc.Other.presenceScore"));
+        assertTrue(failure.getMessage().contains("not listed"));
+    }
+
+    @Test
+    void rejectsInvalidJavadocBooleanEmptyClassListNegativeScoreAndUnknownInclude(
+            @TempDir Path temporaryDirectory) throws IOException {
+        String header = "deliveries=/students\n"
+                + "reports=/reports\n"
+                + "tests=/tests\n"
+                + "name=PAC2\n"
+                + "PAC2Ex2=ExampleTest:1.0\n";
+        String valid = "PAC2Ex2.javadoc.enabled=true\n"
+                + "PAC2Ex2.javadoc.classes=Example\n"
+                + "PAC2Ex2.javadoc.presenceScore=0.5\n"
+                + "PAC2Ex2.javadoc.qualityMaxScore=0.5\n";
+        String[][] invalidConfigurations = {
+                {"PAC2Ex2.javadoc.enabled=maybe\n" + valid.substring(valid.indexOf('\n') + 1),
+                        "PAC2Ex2.javadoc.enabled"},
+                {"PAC2Ex2.javadoc.enabled=true\nPAC2Ex2.javadoc.classes= \n"
+                        + "PAC2Ex2.javadoc.presenceScore=0.5\n"
+                        + "PAC2Ex2.javadoc.qualityMaxScore=0.5\n", "PAC2Ex2.javadoc.classes"},
+                {valid.replace("qualityMaxScore=0.5", "qualityMaxScore=-0.1"),
+                        "PAC2Ex2.javadoc.qualityMaxScore"},
+                {valid + "PAC2Ex2.javadoc.include=methods\n", "PAC2Ex2.javadoc.include"}
+        };
+
+        for (String[] invalidConfiguration : invalidConfigurations) {
+            IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                    () -> loadConfiguration(temporaryDirectory, header + invalidConfiguration[0]));
+            assertTrue(failure.getMessage().contains(invalidConfiguration[1]));
+        }
+    }
+
+    @Test
     void emptyConfigurationRetainsScannerFailure(@TempDir Path temporaryDirectory) throws IOException {
         NoSuchElementException failure = assertThrows(NoSuchElementException.class,
                 () -> loadConfiguration(temporaryDirectory, ""));

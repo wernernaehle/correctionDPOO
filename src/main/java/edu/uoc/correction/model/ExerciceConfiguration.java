@@ -11,6 +11,7 @@ public class ExerciceConfiguration {
     private List<TestNote> listTestNote;
     private boolean scoreByMethods = false;
     private List<MinimumRequirement> minimumRequirements = new ArrayList<>();
+    private JavadocExerciseConfiguration javadocConfiguration;
 
     public List<TestNote> getListTestNote() {
         return listTestNote;
@@ -50,5 +51,13 @@ public class ExerciceConfiguration {
     public void setMinimumRequirements(List<MinimumRequirement> minimumRequirements) {
         this.minimumRequirements = minimumRequirements == null
                 ? new ArrayList<>() : minimumRequirements;
+    }
+
+    public JavadocExerciseConfiguration getJavadocConfiguration() {
+        return javadocConfiguration;
+    }
+
+    public void setJavadocConfiguration(JavadocExerciseConfiguration javadocConfiguration) {
+        this.javadocConfiguration = javadocConfiguration;
     }
 }
