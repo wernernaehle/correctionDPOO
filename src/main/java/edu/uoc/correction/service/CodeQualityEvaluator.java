@@ -11,6 +11,7 @@ import com.sun.source.tree.ContinueTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
@@ -330,6 +331,7 @@ public final class CodeQualityEvaluator {
         private final List<VariableTree> localsAndParameters = new ArrayList<>();
         private final List<VariableTree> parameters = new ArrayList<>();
         private final Set<String> stringVariables = new HashSet<>();
+        private final Set<String> invokedMethods = new HashSet<>();
 
         private Analyzer(ParsedSource source, QualityExerciseConfiguration quality, String selectedClass) {
             this.source = source;
@@ -341,6 +343,22 @@ public final class CodeQualityEvaluator {
         public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void unused) {
             identifierUses.merge(node.getName().toString(), 1, Integer::sum);
             return super.visitIdentifier(node, unused);
+        }
+
+        @Override
+        public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+            Tree methodSelect = node.getMethodSelect();
+            String methodName = methodSelect instanceof com.sun.source.tree.MemberSelectTree
+                    ? ((com.sun.source.tree.MemberSelectTree) methodSelect).getIdentifier().toString()
+                    : methodSelect.toString();
+            invokedMethods.add(methodName);
+            return super.visitMethodInvocation(node, unused);
+        }
+
+        @Override
+        public Void visitMemberReference(MemberReferenceTree node, Void unused) {
+            invokedMethods.add(node.getName().toString());
+            return super.visitMemberReference(node, unused);
         }
 
         @Override
@@ -570,7 +588,7 @@ public final class CodeQualityEvaluator {
             }
             for (MethodTree method : methods) {
                 if (method.getModifiers().getFlags().contains(javax.lang.model.element.Modifier.PRIVATE)
-                        && identifierUses.getOrDefault(method.getName().toString(), 0) <= 1) {
+                        && !invokedMethods.contains(method.getName().toString())) {
                     add(method, QualityRule.UNUSED_PRIVATE_METHOD,
                             "el método privado '" + method.getName() + "' no se utiliza.");
                 }
