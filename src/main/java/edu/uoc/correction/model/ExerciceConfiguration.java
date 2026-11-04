@@ -12,6 +12,7 @@ public class ExerciceConfiguration {
     private boolean scoreByMethods = false;
     private List<MinimumRequirement> minimumRequirements = new ArrayList<>();
     private JavadocExerciseConfiguration javadocConfiguration;
+    private QualityExerciseConfiguration qualityConfiguration;
 
     public List<TestNote> getListTestNote() {
         return listTestNote;
@@ -59,5 +60,13 @@ public class ExerciceConfiguration {
 
     public void setJavadocConfiguration(JavadocExerciseConfiguration javadocConfiguration) {
         this.javadocConfiguration = javadocConfiguration;
+    }
+
+    public QualityExerciseConfiguration getQualityConfiguration() {
+        return qualityConfiguration;
+    }
+
+    public void setQualityConfiguration(QualityExerciseConfiguration qualityConfiguration) {
+        this.qualityConfiguration = qualityConfiguration;
     }
 }

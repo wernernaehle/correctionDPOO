@@ -16,6 +16,7 @@ public class Exercise {
     private String sourceDirectory;
     private JavadocEvaluation javadocEvaluation;
     private double score;
+    private QualityEvaluation qualityEvaluation;
 
     public String getName() {
         return name;
@@ -84,5 +85,13 @@ public class Exercise {
 
     public void setScore(double score) {
         this.score = score;
+    }
+
+    public QualityEvaluation getQualityEvaluation() {
+        return qualityEvaluation;
+    }
+
+    public void setQualityEvaluation(QualityEvaluation qualityEvaluation) {
+        this.qualityEvaluation = qualityEvaluation;
     }
 }

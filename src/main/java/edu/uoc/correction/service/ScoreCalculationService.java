@@ -18,14 +18,21 @@ final class ScoreCalculationService {
 
     private final Configuration configuration;
     private final JavadocEvaluator javadocEvaluator;
+    private final CodeQualityEvaluator codeQualityEvaluator;
 
     ScoreCalculationService(Configuration configuration) {
-        this(configuration, new JavadocEvaluator(configuration));
+        this(configuration, new JavadocEvaluator(configuration), new CodeQualityEvaluator(configuration));
     }
 
     ScoreCalculationService(Configuration configuration, JavadocEvaluator javadocEvaluator) {
+        this(configuration, javadocEvaluator, new CodeQualityEvaluator(configuration));
+    }
+
+    ScoreCalculationService(Configuration configuration, JavadocEvaluator javadocEvaluator,
+                            CodeQualityEvaluator codeQualityEvaluator) {
         this.configuration = configuration;
         this.javadocEvaluator = javadocEvaluator;
+        this.codeQualityEvaluator = codeQualityEvaluator;
     }
 
     double calculateStudentScore(List<Exercise> exercises, List<Double> exerciseScores) {
@@ -59,12 +66,30 @@ final class ScoreCalculationService {
                 exerciseScores.add(exerciseScore);
             }
             exercise.setScore(exerciseScore);
-            studentScore += exerciseScore;
-            if (javadocEvaluation != null) {
-                studentScore += javadocEvaluation.getTotalScore();
+            boolean qualityEligible = isQualityEnabled(exercise)
+                    && exercise.getTestsuiteList() != null && failedRequirements.isEmpty();
+            if (qualityEligible) {
+                double scoreObtained = exerciseScore
+                        + (javadocEvaluation == null ? 0 : javadocEvaluation.getTotalScore());
+                exercise.setQualityEvaluation(codeQualityEvaluator.evaluate(exercise, scoreObtained));
+                exercise.setScore(exercise.getQualityEvaluation().getFinalScore());
+                studentScore += exercise.getQualityEvaluation().getFinalScore();
+            } else {
+                exercise.setQualityEvaluation(null);
+                studentScore += exerciseScore;
+                if (javadocEvaluation != null) {
+                    studentScore += javadocEvaluation.getTotalScore();
+                }
             }
         }
         return studentScore;
+    }
+
+    private boolean isQualityEnabled(Exercise exercise) {
+        ExerciceConfiguration exerciseConfiguration =
+                configuration.getMapExercisesTests().get(exercise.getName());
+        return exerciseConfiguration != null
+                && exerciseConfiguration.getQualityConfiguration() != null;
     }
 
     private List<MinimumRequirement> findFailedMinimumRequirements(Exercise exercise) {

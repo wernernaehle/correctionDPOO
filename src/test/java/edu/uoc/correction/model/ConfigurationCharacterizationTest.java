@@ -230,6 +230,60 @@ class ConfigurationCharacterizationTest {
     }
 
     @Test
+    void parsesQualityConfigurationAndKeepsItsPenaltyOutsideMaximumScore(
+                @TempDir Path temporaryDirectory) throws IOException {
+            Path reference = temporaryDirectory.resolve("reference");
+            Files.createDirectories(reference);
+            Files.write(reference.resolve("Sample.java"), "class Sample {}".getBytes(StandardCharsets.UTF_8));
+
+            Configuration configuration = loadConfiguration(temporaryDirectory,
+                    "deliveries=/students\nreports=/reports\ntests=/tests\nname=PAC2\n"
+                            + "PAC2Ex1=ExampleTest:3.0\n"
+                            + "quality.weights=duplication:1,deadCode:1,complexity:1,javaIdioms:1,naming:1\n"
+                            + "quality.violationsForFullCategoryPenalty=4\n"
+                            + "PAC2Ex1.quality.enabled=true\n"
+                            + "PAC2Ex1.quality.maxPenalty=1.5\n"
+                            + "PAC2Ex1.quality.classes=Sample\n"
+                            + "PAC2Ex1.quality.referencePath=" + reference + "\n"
+                            + "PAC2Ex1.quality.disabledRules=UNUSED_IMPORT\n");
+
+            QualityExerciseConfiguration quality = configuration.getMapExercisesTests().get("PAC2Ex1")
+                    .getQualityConfiguration();
+            assertEquals(1.5, quality.getMaxPenalty());
+            assertEquals(4, quality.getViolationsForFullCategoryPenalty());
+            assertEquals(1.0, quality.getWeights().get(QualityCategory.JAVA_IDIOMS));
+            assertTrue(quality.getDisabledRules().contains(QualityRule.UNUSED_IMPORT));
+            assertEquals(3.0, configuration.getScorePAC());
+        }
+
+    @Test
+    void rejectsInvalidQualitySettingsWithPropertyAndValue(@TempDir Path temporaryDirectory)
+            throws IOException {
+            Path reference = temporaryDirectory.resolve("reference");
+            Files.createDirectories(reference);
+            Files.write(reference.resolve("Sample.java"), "class Sample {}".getBytes(StandardCharsets.UTF_8));
+            String header = "deliveries=/students\nreports=/reports\ntests=/tests\nname=PAC2\n"
+                    + "PAC2Ex1=ExampleTest:1.0\n";
+            String valid = "PAC2Ex1.quality.enabled=true\nPAC2Ex1.quality.maxPenalty=1\n"
+                    + "PAC2Ex1.quality.classes=Sample\nPAC2Ex1.quality.referencePath=" + reference + "\n";
+            String[][] invalid = {
+                    {valid.replace("enabled=true", "enabled=yes"), "PAC2Ex1.quality.enabled"},
+                    {valid.replace("maxPenalty=1", "maxPenalty=0"), "PAC2Ex1.quality.maxPenalty"},
+                    {valid.replace("classes=Sample\n", "classes=Missing\n"), "PAC2Ex1.quality.classes"},
+                    {valid.replace(reference.toString(), temporaryDirectory.resolve("missing").toString()),
+                            "PAC2Ex1.quality.referencePath"},
+                    {valid + "PAC2Ex1.quality.disabledRules=UNKNOWN_RULE\n",
+                            "PAC2Ex1.quality.disabledRules"},
+                    {valid + "quality.weights=duplication:nope\n", "quality.weights"}
+            };
+            for (String[] entry : invalid) {
+                IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                        () -> loadConfiguration(temporaryDirectory, header + entry[0]));
+                assertTrue(failure.getMessage().contains(entry[1]), failure.getMessage());
+        }
+    }
+
+    @Test
     void emptyConfigurationRetainsScannerFailure(@TempDir Path temporaryDirectory) throws IOException {
         NoSuchElementException failure = assertThrows(NoSuchElementException.class,
                 () -> loadConfiguration(temporaryDirectory, ""));
