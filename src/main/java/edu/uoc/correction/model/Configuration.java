@@ -35,6 +35,7 @@ public class Configuration {
     private String javadocExerciseTitle;
     TreeMap<String, ExerciceConfiguration> mapExercisesTests;
     private double scorePAC;
+    private double canvasGradeMultiplier = 10.0;
     private final Map<QualityCategory, Double> qualityWeights = defaultQualityWeights();
     private int qualityViolationsForFullCategoryPenalty = 3;
     private int qualityComplexityThreshold = 10;
@@ -72,9 +73,18 @@ public class Configuration {
         Map<String, Map<String, String>> javadocProperties = new LinkedHashMap<>();
         Map<String, Map<String, String>> qualityProperties = new LinkedHashMap<>();
         Map<String, String> globalQualityProperties = new LinkedHashMap<>();
+        boolean canvasGradeMultiplierDefined = false;
         while(scanner.hasNextLine()) {
             String line = scanner.nextLine().trim();
             if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            if (line.startsWith("canvas.grade.multiplier")) {
+                if (canvasGradeMultiplierDefined) {
+                    throw invalidCanvasGradeMultiplier(line, "property is defined more than once");
+                }
+                parseCanvasGradeMultiplier(line);
+                canvasGradeMultiplierDefined = true;
                 continue;
             }
             if (line.startsWith("javadoc.exercise.title")) {
@@ -130,6 +140,26 @@ public class Configuration {
                     "the title must not duplicate a configured exercise");
         }
         return totalScore.value;
+    }
+
+    private void parseCanvasGradeMultiplier(String line) {
+        int assignment = line.indexOf('=');
+        String key = assignment < 0 ? line.trim() : line.substring(0, assignment).trim();
+        String value = assignment < 0 ? "" : line.substring(assignment + 1).trim();
+        if (assignment < 0 || !key.equals("canvas.grade.multiplier")) {
+            throw invalidCanvasGradeMultiplier(line, "expected canvas.grade.multiplier = number");
+        }
+        try {
+            setCanvasGradeMultiplier(Double.parseDouble(value));
+        } catch (NumberFormatException e) {
+            throw invalidCanvasGradeMultiplier(value, "value must be a finite number greater than or equal to 0");
+        } catch (IllegalArgumentException e) {
+            throw invalidCanvasGradeMultiplier(value, "value must be a finite number greater than or equal to 0");
+        }
+    }
+
+    private IllegalArgumentException invalidCanvasGradeMultiplier(String value, String reason) {
+        return new IllegalArgumentException("Invalid canvas.grade.multiplier '" + value + "': " + reason);
     }
 
     private static Map<QualityCategory, Double> defaultQualityWeights() {
@@ -824,6 +854,18 @@ public class Configuration {
 
     public void setScorePAC(double scorePAC) {
         this.scorePAC = scorePAC;
+    }
+
+    public double getCanvasGradeMultiplier() {
+        return canvasGradeMultiplier;
+    }
+
+    public void setCanvasGradeMultiplier(double canvasGradeMultiplier) {
+        if (!Double.isFinite(canvasGradeMultiplier) || canvasGradeMultiplier < 0) {
+            throw new IllegalArgumentException("canvas.grade.multiplier must be a finite number "
+                    + "greater than or equal to 0");
+        }
+        this.canvasGradeMultiplier = canvasGradeMultiplier;
     }
 
     public String getJavadocExerciseTitle() {

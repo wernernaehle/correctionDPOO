@@ -35,6 +35,7 @@ class ConfigurationCharacterizationTest {
         assertEquals("/tests", configuration.getDirectoryTestsPACs());
         assertEquals("PAC2", configuration.getName());
         assertEquals(10.5, configuration.getScorePAC());
+        assertEquals(10.0, configuration.getCanvasGradeMultiplier());
         assertEquals(Arrays.asList("PAC2Ex1", "PAC2Ex2", "PAC2Ex3"),
                 new ArrayList<>(configuration.getMapExercisesTests().keySet()));
 
@@ -47,6 +48,21 @@ class ConfigurationCharacterizationTest {
                 configuration.getMapExercisesTests().get("PAC2Ex3").getListTestNote().get(0).getScore());
         assertEquals("Gamma",
                 configuration.getMapExercisesTests().get("PAC2Ex2").getListTestNote().get(0).getTestName());
+    }
+
+    @Test
+    void parsesCanvasGradeMultiplierWithoutChangingPacScore(@TempDir Path temporaryDirectory)
+            throws IOException {
+        Configuration configuration = loadConfiguration(temporaryDirectory,
+                "deliveries=/students\n"
+                        + "reports=/reports\n"
+                        + "tests=/tests\n"
+                        + "name=PAC2\n"
+                        + "PAC2Ex1=ExampleTest:10.0\n"
+                        + "canvas.grade.multiplier = 20\n");
+
+        assertEquals(20.0, configuration.getCanvasGradeMultiplier());
+        assertEquals(10.0, configuration.getScorePAC());
     }
 
     @Test

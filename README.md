@@ -14,6 +14,8 @@ La configuración se lee desde `src/main/resources/config.properties`. Las cuatr
 
 Las líneas siguientes contienen la puntuación y opciones por ejercicio. Los nombres de las propiedades distinguen mayúsculas y minúsculas.
 
+Para añadir a `PASSWORD.txt` la nota de evaluación continua para Canvas, se puede configurar `canvas.grade.multiplier`. La nota se calcula como `nota total * multiplier / 10`; por ejemplo, con `canvas.grade.multiplier = 20`, una nota total de `9.11` se muestra como `18.22`. Si se omite la propiedad, se usa `10` y el campo de Canvas coincide con la nota total. Esta propiedad sólo afecta al mensaje de `PASSWORD.txt`, no a la nota calculada por la herramienta.
+
 ### Puntuación y requisitos mínimos
 
 Las definiciones de ejercicios siguen el formato existente `Ejercicio = ClaseTest:puntuación#metodo:puntuación, ...`. La propiedad opcional `<Ejercicio>.minimumRequirements` define pruebas que deben superarse para obtener nota en ese ejercicio:

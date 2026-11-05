@@ -27,16 +27,18 @@ class ReportArchiveServiceTest {
 
         Configuration configuration = new Configuration();
         configuration.setDirectoryReportsPACs(temporaryDirectory.toString());
+        configuration.setCanvasGradeMultiplier(20);
 
         new ReportArchiveService(configuration).createArchives(
-                Collections.singletonMap("student_PEC_example", 1.25));
+                Collections.singletonMap("student_PEC_example", 9.11));
 
         Path archive = temporaryDirectory.resolve("student_PEC_example.zip");
         assertTrue(Files.exists(archive));
         String passwordFile = new String(
                 Files.readAllBytes(temporaryDirectory.resolve("PASSWORD.txt")), StandardCharsets.UTF_8);
         assertTrue(passwordFile.contains("Estudiante: student"));
-        assertTrue(passwordFile.contains("Tu nota numérica es un 1.25. Te adjunto un fichero .zip"));
+        assertTrue(passwordFile.contains("Nota para Canvas (evaluación continua): 18.22"));
+        assertTrue(passwordFile.contains("Tu nota numérica es un 9.11. Te adjunto un fichero .zip"));
         assertTrue(passwordFile.contains("tests, calidad y la nota obtenida."));
         assertTrue(!passwordFile.contains("imagen adjunta"));
         Matcher passwordMatcher = Pattern.compile("Password: (\\w+)").matcher(passwordFile);

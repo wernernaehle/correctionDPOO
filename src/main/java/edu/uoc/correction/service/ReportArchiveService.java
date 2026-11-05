@@ -93,9 +93,12 @@ final class ReportArchiveService {
         String[] nameParts = studentName.split("_PEC_");
         String username = nameParts[0];
         String lineSeparator = System.lineSeparator();
+        double canvasGrade = score * configuration.getCanvasGradeMultiplier() / 10.0;
         passwordWriter.write("Estudiante: " + username + lineSeparator
                 + "Fichero: " + studentName + ".zip" + lineSeparator
                 + "Password: " + password + lineSeparator
+                + "Nota para Canvas (evaluación continua): "
+                + String.format(Locale.ROOT, "%.2f", canvasGrade) + lineSeparator
                 + "Mensaje:" + lineSeparator
                 + "-----" + lineSeparator
                 + "Hola," + lineSeparator + lineSeparator
